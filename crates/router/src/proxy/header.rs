@@ -4,7 +4,7 @@
 /// by intermediaries.
 use axum::http::{HeaderMap, HeaderName, HeaderValue};
 
-/// Headers that MUST NOT be forwarded from the backend response to the client.
+/// Headers that MUST NOT be forwarded from the worker response to the client.
 const HOP_BY_HOP: &[&str] = &[
     "connection",
     "keep-alive",
@@ -21,7 +21,7 @@ pub fn is_hop_by_hop(name: &str) -> bool {
     HOP_BY_HOP.contains(&name)
 }
 
-/// Return a filtered copy of backend response headers, excluding hop-by-hop headers.
+/// Return a filtered copy of worker response headers, excluding hop-by-hop headers.
 pub fn filter_hop_by_hop(headers: &HeaderMap) -> Vec<(HeaderName, HeaderValue)> {
     headers
         .iter()

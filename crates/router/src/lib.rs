@@ -1,4 +1,4 @@
-//! tokendog-router — Round-robin HTTP gateway for vLLM/SGLang inference engines.
+//! tokendog-router — LLM gateway for vLLM/SGLang inference engines.
 
 pub mod config;
 pub mod health;

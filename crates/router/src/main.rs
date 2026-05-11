@@ -13,34 +13,40 @@ use tokendog_router::{
 /// Entry point: parse configuration, start the HTTP server, and wait for shutdown.
 #[tokio::main]
 async fn main() {
-    // Initialize structured logging.
-    tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::from_default_env())
-        .init();
-
-    // Parse configuration from CLI args and environment variables.
+    // Parse configuration from CLI args and environment variables (do this first
+    // so --log-level can influence the tracing filter).
     let config = Config::parse();
 
+    // Initialize structured logging. RUST_LOG from the environment takes
+    // precedence; otherwise the --log-level argument (or its default) is used.
+    let env_filter = EnvFilter::builder()
+        .with_default_directive(config.log_level.to_tracing_level().into())
+        .from_env_lossy();
+    tracing_subscriber::fmt().with_env_filter(env_filter).init();
+
+    let listen_addr = format!("{}:{}", config.host, config.port);
+
     tracing::info!(
-        listen_addr = %config.listen_addr,
-        backends = ?config.backends,
+        host = %config.host,
+        port = config.port,
+        worker_urls = ?config.worker_urls,
         "Starting tokendog-router",
     );
 
     // Build application state and router.
     let state = Arc::new(AppState::new(
-        config.backends,
+        config.worker_urls,
         config.request_timeout_secs,
         RoundRobin::new(),
     ));
     let app = build_router(state);
 
     // Bind the TCP listener and start serving.
-    let listener = TcpListener::bind(&config.listen_addr)
+    let listener = TcpListener::bind(&listen_addr)
         .await
         .expect("Failed to bind to listen address");
 
-    tracing::info!("Listening on {}", config.listen_addr);
+    tracing::info!("Listening on {}", listen_addr);
 
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())
@@ -53,15 +59,16 @@ async fn shutdown_signal() {
     let ctrl_c = tokio::signal::ctrl_c();
 
     #[cfg(unix)]
-    let term = {
-        use tokio::signal::unix;
-        let mut stream =
-            unix::signal(unix::SignalKind::terminate()).expect("failed to install SIGTERM handler");
-        stream.recv()
-    };
+    let mut sigterm = tokio::signal::unix::signal(
+        tokio::signal::unix::SignalKind::terminate(),
+    )
+    .expect("failed to install SIGTERM handler");
 
     #[cfg(not(unix))]
     let term = std::future::pending::<()>();
+
+    #[cfg(unix)]
+    let term = sigterm.recv();
 
     tokio::select! {
         _ = ctrl_c => {
