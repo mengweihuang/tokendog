@@ -11,13 +11,13 @@ use thiserror::Error;
 /// Errors that can occur during request proxying.
 #[derive(Debug, Error)]
 pub enum ProxyError {
-    /// The backend URL could not be parsed.
-    #[error("Invalid backend URL: {0}")]
+    /// The worker URL could not be parsed.
+    #[error("Invalid worker URL: {0}")]
     UrlParse(#[from] url::ParseError),
 
-    /// The request to the backend failed (timeout, connection refused, etc.).
-    #[error("Backend request failed: {0}")]
-    BackendRequest(#[from] reqwest::Error),
+    /// The request to the worker failed (timeout, connection refused, etc.).
+    #[error("Worker request failed: {0}")]
+    WorkerRequest(#[from] reqwest::Error),
 
     /// Failed to collect the incoming request body.
     #[error("Failed to read request body: {0}")]
@@ -33,21 +33,21 @@ impl IntoResponse for ProxyError {
         let (status, message) = match &self {
             Self::UrlParse(e) => {
                 tracing::warn!("URL parse error: {e}");
-                (StatusCode::BAD_GATEWAY, "invalid backend URL".to_string())
+                (StatusCode::BAD_GATEWAY, "invalid worker URL".to_string())
             }
-            Self::BackendRequest(e) => {
+            Self::WorkerRequest(e) => {
                 if e.is_timeout() {
-                    tracing::warn!("Backend timeout: {e}");
-                    (StatusCode::GATEWAY_TIMEOUT, "backend timeout".to_string())
+                    tracing::warn!("Worker timeout: {e}");
+                    (StatusCode::GATEWAY_TIMEOUT, "worker timeout".to_string())
                 } else if e.is_connect() {
-                    tracing::error!("Backend connection failed: {e}");
+                    tracing::error!("Worker connection failed: {e}");
                     (
                         StatusCode::BAD_GATEWAY,
-                        "backend connection failed".to_string(),
+                        "worker connection failed".to_string(),
                     )
                 } else {
-                    tracing::error!("Backend request error: {e}");
-                    (StatusCode::BAD_GATEWAY, "backend error".to_string())
+                    tracing::error!("Worker request error: {e}");
+                    (StatusCode::BAD_GATEWAY, "worker error".to_string())
                 }
             }
             Self::BodyCollect(e) => {

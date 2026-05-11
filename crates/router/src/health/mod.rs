@@ -9,10 +9,10 @@ use crate::state::AppState;
 #[derive(Serialize)]
 pub struct HealthResponse {
     status: String,
-    backends: Vec<String>,
+    worker_urls: Vec<String>,
 }
 
-/// `GET /health` — Returns the gateway health status and configured backends.
+/// `GET /health` — Returns the gateway health status and configured worker URLs.
 pub async fn health_handler(
     State(state): State<Arc<AppState>>,
 ) -> (StatusCode, Json<HealthResponse>) {
@@ -20,7 +20,7 @@ pub async fn health_handler(
         StatusCode::OK,
         Json(HealthResponse {
             status: "ok".to_string(),
-            backends: state.backends.clone(),
+            worker_urls: state.worker_urls.clone(),
         }),
     )
 }

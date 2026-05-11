@@ -1,6 +1,6 @@
 # tokendog-router
 
-Round-robin HTTP gateway for [vLLM](https://github.com/vllm-project/vllm) / [SGLang](https://github.com/sgl-project/sglang) local inference engines.
+LLM gateway for [vLLM](https://github.com/vllm-project/vllm) / [SGLang](https://github.com/sgl-project/sglang) local inference engines.
 
 ## Design Philosophy
 
@@ -8,19 +8,19 @@ Round-robin HTTP gateway for [vLLM](https://github.com/vllm-project/vllm) / [SGL
 
 The gateway is deliberately thin — it does not parse, inspect, or modify request payloads.
 Every HTTP request (method, headers, body, query parameters) is forwarded verbatim to the
-selected backend. This ensures compatibility with any existing vLLM/SGLang client code
+selected worker. This ensures compatibility with any existing vLLM/SGLang client code
 and avoids coupling the gateway to specific API versions.
 
 ### Streaming-first
 
 LLM inference is fundamentally streaming — tokens arrive one at a time over Server-Sent
-Events (SSE). The response path never buffers: backend chunks are forwarded to the client
+Events (SSE). The response path never buffers: worker chunks are forwarded to the client
 as they arrive via `reqwest::bytes_stream()` → `axum::Body::from_stream()`. This design
 keeps time-to-first-token minimal regardless of response size.
 
 ### Pluggable load balancing
 
-Backend selection is abstracted behind the [`LoadBalancer`] trait so new strategies
+Worker selection is abstracted behind the [`LoadBalancer`] trait so new strategies
 (weighted, least-connections, consistent-hash, etc.) can be added without touching the
 request-forwarding logic.
 
@@ -30,8 +30,8 @@ request-forwarding logic.
 crates/router/src/
 ├── main.rs              # Entry point: config → state → server → graceful shutdown
 ├── lib.rs               # Module tree + build_router() wiring
-├── config.rs            # CLI/env configuration (listen addr, backends, timeout)
-├── state.rs             # AppState: shared HTTP client + backend list + load balancer
+├── config.rs            # CLI/env configuration (listen addr, worker_urls, timeout)
+├── state.rs             # AppState: shared HTTP client + worker list + load balancer
 ├── proxy.rs             # Core reverse-proxy handler (the hot path)
 ├── health.rs            # GET /health endpoint
 ├── header.rs            # RFC 2616 hop-by-hop header filtering
@@ -44,11 +44,11 @@ crates/router/src/
 ### Request flow
 
 ```
-Client                     tokendog-router                    Backend vLLM
+Client                     tokendog-router                    Worker vLLM
   │                             │                                  │
   │  POST /v1/chat/completions   │                                  │
   │─────────────────────────────►│                                  │
-  │                             │  next_backend() (round-robin)     │
+  │                             │  next_worker() (round-robin)     │
   │                             │─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─►│
   │                             │                                  │
   │                             │  Forward request (verbatim)      │
@@ -67,16 +67,17 @@ All options can be set via CLI arguments or environment variables:
 
 | Option | Env var | Default | Description |
 |--------|---------|---------|-------------|
-| `--listen-addr` | `LISTEN_ADDR` | `127.0.0.1:8000` | Gateway listen address |
-| `--backends` | `BACKENDS` | *(required)* | Comma-separated backend URLs |
-| `--request-timeout-secs` | `REQUEST_TIMEOUT` | `300` | Backend response timeout |
+| `--host` | `HOST` | `0.0.0.0` | Gateway listen host |
+| `--port` | `PORT` | `30000` | Gateway listen port |
+| `--worker-urls` | `WORKER_URLS` | *(required)* | Comma-separated worker URLs |
+| `--request-timeout-secs` | `REQUEST_TIMEOUT` | `300` | Worker response timeout |
 
 ```bash
 # CLI args
-cargo run -- --backends http://192.168.1.10:8000,http://192.168.1.20:8000
+cargo run -- --worker-urls http://192.168.1.10:8000,http://192.168.1.20:8000
 
 # Environment variables
-BACKENDS=http://192.168.1.10:8000,http://192.168.1.20:8000 cargo run
+WORKER_URLS=http://192.168.1.10:8000,http://192.168.1.20:8000 cargo run
 ```
 
 ## Load Balancing Policies
@@ -85,7 +86,7 @@ The [`LoadBalancer`] trait allows switching strategies without modifying the pro
 
 ```rust
 pub trait LoadBalancer: Send + Sync {
-    fn select(&self, backends: &[String]) -> usize;
+    fn select(&self, workers: &[String]) -> usize;
 }
 ```
 
@@ -107,21 +108,21 @@ pub struct Weighted {
 }
 
 impl LoadBalancer for Weighted {
-    fn select(&self, backends: &[String]) -> usize {
+    fn select(&self, workers: &[String]) -> usize {
         // Custom selection logic
     }
 }
 ```
 
-Then register it in `policies/mod.rs` and use it via `AppState::new(backends, timeout, Weighted::new(...))`.
+Then register it in `policies/mod.rs` and use it via `AppState::new(worker_urls, timeout, Weighted::new(...))`.
 
 ## SSE Streaming
 
 The response path is fully streaming — critical for LLM inference where each token
 arrives as a separate SSE data frame:
 
-1. Backend responds with `Content-Type: text/event-stream`
-2. `reqwest::Response::bytes_stream()` yields chunks as they arrive from the backend
+1. Worker responds with `Content-Type: text/event-stream`
+2. `reqwest::Response::bytes_stream()` yields chunks as they arrive from the worker
 3. `axum::Body::from_stream()` feeds each chunk directly into the HTTP response body
 4. The client receives tokens incrementally with zero buffering
 
@@ -130,8 +131,8 @@ because `axum::body::Body` is `!Send` and cannot be passed directly to reqwest.
 
 ## Error Handling
 
-- **502 Bad Gateway**: Backend URL parse failure, connection refused, or transport error
-- **504 Gateway Timeout**: Backend does not respond within `request-timeout-secs`
+- **502 Bad Gateway**: Worker URL parse failure, connection refused, or transport error
+- **504 Gateway Timeout**: Worker does not respond within `request-timeout-secs`
 - **500 Internal Server Error**: Response construction failure (should not occur in practice)
 - **400 Bad Request**: Request body too large or unreadable
 

@@ -3,7 +3,7 @@ name = "tokendog-router"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Round-robin HTTP gateway for vLLM/SGLang inference engines"
+description = "LLM gateway for vLLM/SGLang inference engines"
 
 [dependencies]
 axum = { version = "0.7", features = ["macros"] }
