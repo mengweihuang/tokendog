@@ -1,4 +1,4 @@
-# tokendog-router
+# TokenDog Router
 
 LLM gateway for [vLLM](https://github.com/vllm-project/vllm) / [SGLang](https://github.com/sgl-project/sglang) local inference engines.
 
@@ -28,14 +28,18 @@ request-forwarding logic.
 
 ```
 crates/router/src/
-├── main.rs              # Entry point: config → state → server → graceful shutdown
-├── lib.rs               # Module tree + build_router() wiring
-├── config.rs            # CLI/env configuration (listen addr, worker_urls, timeout)
-├── state.rs             # AppState: shared HTTP client + worker list + load balancer
-├── proxy.rs             # Core reverse-proxy handler (the hot path)
-├── health.rs            # GET /health endpoint
-├── header.rs            # RFC 2616 hop-by-hop header filtering
-├── error.rs             # ProxyError → HTTP status codes (no stack leaks)
+├── main.rs              # Binary entry point: config → state → server → shutdown
+├── lib.rs               # Module tree, build_router(), shutdown_signal()
+├── config/
+│   └── mod.rs           # CLI/env configuration (Config struct + LogLevel enum)
+├── state/
+│   └── mod.rs           # AppState: shared HTTP client + worker list + load balancer
+├── proxy/
+│   ├── mod.rs           # Core reverse-proxy handler (the hot path)
+│   ├── error.rs         # ProxyError → HTTP status codes (no stack leaks)
+│   └── header.rs        # RFC 2616 hop-by-hop header filtering
+├── health/
+│   └── mod.rs           # GET /health endpoint
 └── policies/
     ├── mod.rs           # LoadBalancer trait
     └── round_robin.rs   # RoundRobin implementation (lock-free AtomicUsize)
@@ -44,7 +48,7 @@ crates/router/src/
 ### Request flow
 
 ```
-Client                     tokendog-router                    Worker vLLM
+Client                         router                    Worker vLLM
   │                             │                                  │
   │  POST /v1/chat/completions   │                                  │
   │─────────────────────────────►│                                  │
@@ -61,6 +65,49 @@ Client                     tokendog-router                    Worker vLLM
   │◄─────────────────────────────│                                  │
 ```
 
+## Quick Start
+
+```bash
+cargo run -- \
+    --worker-urls http://192.168.1.10:8000 http://192.168.1.20:8000 \
+    --port 30000 \
+    --log-level info
+```
+
+Verify:
+
+```bash
+curl http://localhost:30000/health
+# {"status":"ok","worker_urls":["http://192.168.1.10:8000","http://192.168.1.20:8000"]}
+```
+
+## Library API
+
+The crate exposes a public library API so it can be embedded in other Rust projects
+or used for Python bindings:
+
+```rust
+use std::sync::Arc;
+use router::{
+    build_router,
+    policies::round_robin::RoundRobin,
+    shutdown_signal,
+    state::AppState,
+};
+
+let state = Arc::new(AppState::new(
+    vec!["http://localhost:8000".into()],
+    300,
+    RoundRobin::new(),
+));
+let app = build_router(state);
+
+let listener = tokio::net::TcpListener::bind("0.0.0.0:30000").await?;
+axum::serve(listener, app)
+    .with_graceful_shutdown(shutdown_signal())
+    .await?;
+```
+
 ## Configuration
 
 All options can be set via CLI arguments or environment variables:
@@ -69,15 +116,16 @@ All options can be set via CLI arguments or environment variables:
 |--------|---------|---------|-------------|
 | `--host` | `HOST` | `0.0.0.0` | Gateway listen host |
 | `--port` | `PORT` | `30000` | Gateway listen port |
-| `--worker-urls` | `WORKER_URLS` | *(required)* | Comma-separated worker URLs |
+| `--worker-urls` | `WORKER_URLS` | *(required)* | Space-separated worker URLs |
 | `--request-timeout-secs` | `REQUEST_TIMEOUT` | `300` | Worker response timeout |
+| `--log-level` | `LOG_LEVEL` | `info` | Log filter: error, warn, info, debug |
 
 ```bash
 # CLI args
-cargo run -- --worker-urls http://192.168.1.10:8000,http://192.168.1.20:8000
+cargo run -- --worker-urls http://192.168.1.10:8000 http://192.168.1.20:8000
 
 # Environment variables
-WORKER_URLS=http://192.168.1.10:8000,http://192.168.1.20:8000 cargo run
+WORKER_URLS="http://192.168.1.10:8000 http://192.168.1.20:8000" cargo run
 ```
 
 ## Load Balancing Policies
@@ -94,7 +142,7 @@ pub trait LoadBalancer: Send + Sync {
 
 | Policy | File | Strategy |
 |--------|------|----------|
-| `RoundRobin` | `policies/round_robin.rs` | Lock-free `AtomicUsize` counter, `Ordering::Relaxed` |
+| `RoundRobin` | `policies/round_robin.rs` | Lock-free `AtomicUsize` counter |
 
 ### Adding a new policy
 
@@ -131,10 +179,12 @@ because `axum::body::Body` is `!Send` and cannot be passed directly to reqwest.
 
 ## Error Handling
 
-- **502 Bad Gateway**: Worker URL parse failure, connection refused, or transport error
-- **504 Gateway Timeout**: Worker does not respond within `request-timeout-secs`
-- **500 Internal Server Error**: Response construction failure (should not occur in practice)
-- **400 Bad Request**: Request body too large or unreadable
+| Status | Cause |
+|--------|-------|
+| **502 Bad Gateway** | Worker URL parse failure, connection refused, or transport error |
+| **504 Gateway Timeout** | Worker does not respond within `request-timeout-secs` |
+| **500 Internal Server Error** | Response construction failure |
+| **400 Bad Request** | Request body too large (>16 MB) or unreadable |
 
 All errors are logged via `tracing` with internal details hidden from the response body.
 

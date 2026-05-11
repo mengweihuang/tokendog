@@ -1,5 +1,5 @@
 [package]
-name = "tokendog-router"
+name = "router"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

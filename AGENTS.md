@@ -12,4 +12,5 @@
 ## Code changes
 
 * Add tests and update docs for the changed code.
+* Before creating commits, run `pre-commit run --all-files` to format.
 * When creating commits, perform sign off on behalf of the author.

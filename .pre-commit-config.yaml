@@ -1,0 +1,42 @@
+repos:
+  - repo: local
+    hooks:
+      - id: cargo-fmt
+        name: cargo fmt
+        entry: bash -c 'cd crates && cargo fmt --all -- --check'
+        language: system
+        types: [rust]
+        pass_filenames: false
+
+      - id: cargo-clippy
+        name: cargo clippy
+        entry: bash -c 'cd crates && cargo clippy --all-targets -- -D warnings'
+        language: system
+        types: [rust]
+        pass_filenames: false
+
+      - id: ruff-format
+        name: ruff format
+        entry: ruff format --check
+        language: system
+        types: [python]
+        exclude_types: [rust]
+
+      - id: ruff-check
+        name: ruff check
+        entry: ruff check
+        language: system
+        types: [python]
+        exclude_types: [rust]
+
+      - id: check-merge-conflict
+        name: check-merge-conflict
+        entry: bash -c 'if grep -rn "^<<<<<<< \|^=======$\|^>>>>>>> " --include="*.rs" --include="*.py" --include="*.toml" --include="*.md" crates/ examples/ 2>/dev/null; then echo "Merge conflicts found"; exit 1; fi'
+        language: system
+        pass_filenames: false
+
+      - id: trailing-whitespace
+        name: trailing-whitespace
+        entry: bash -c 'if git grep -n "[[:blank:]]$" -- "*.rs" "*.py" "*.toml" "*.md" "*.yaml" 2>/dev/null; then echo "Trailing whitespace found"; exit 1; fi'
+        language: system
+        pass_filenames: false
