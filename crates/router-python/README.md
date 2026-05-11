@@ -21,6 +21,37 @@ maturin develop
 
 Requires Python ≥ 3.8 and a Rust toolchain.
 
+## CLI
+
+After installation, the `router` command is available on the command line:
+
+```bash
+router --port 8000 --worker-urls http://127.0.0.1:8080
+```
+
+### Arguments
+
+| Argument | Type | Default | Description |
+|----------|------|---------|-------------|
+| `--host` | `str` | `0.0.0.0` | Bind address |
+| `--port` | `int` | `30000` | Bind port |
+| `--worker-urls` | `str...` | *(required)* | Worker URL(s), space or comma separated |
+| `--request-timeout-secs` | `int` | `300` | Upstream request timeout in seconds |
+| `--log-level` | `str` | `info` | Log level: `error`, `warn`, `info`, `debug` |
+
+Multiple workers can be specified either with spaces or commas:
+
+```bash
+router --port 8000 --worker-urls http://10.0.0.1:8000 http://10.0.0.2:8000
+router --port 8000 --worker-urls http://10.0.0.1:8000,http://10.0.0.2:8000
+```
+
+You can also run with `python -m router`:
+
+```bash
+python -m router --port 8000 --worker-urls http://127.0.0.1:8080
+```
+
 ## API
 
 ### `Router`

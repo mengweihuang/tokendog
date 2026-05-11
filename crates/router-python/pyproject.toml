@@ -7,6 +7,9 @@ name = "router"
 version = "0.1.0"
 requires-python = ">=3.8"
 
+[project.scripts]
+router = "router.cli:main"
+
 [tool.maturin]
 python-source = "src"
 module-name = "router._core"
