@@ -25,11 +25,11 @@ impl LogLevel {
     }
 }
 
-/// Configuration for the tokendog-router gateway.
+/// Configuration for the router gateway.
 ///
 /// Parsed from CLI arguments and/or environment variables via clap.
 #[derive(Parser, Debug, Clone)]
-#[command(name = "tokendog-router", version)]
+#[command(name = "router", version)]
 pub struct Config {
     /// Host address to bind to.
     #[arg(long, env = "HOST", default_value = "0.0.0.0")]

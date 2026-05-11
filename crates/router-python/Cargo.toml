@@ -1,0 +1,18 @@
+[package]
+name = "router-python"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Python bindings for router"
+
+[lib]
+name = "_core"
+crate-type = ["cdylib"]
+
+[dependencies]
+router = { path = "../router" }
+pyo3 = { version = "0.24", features = ["extension-module"] }
+tokio = { version = "1", features = ["rt-multi-thread", "signal", "macros", "net"] }
+axum = "0.7"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing = "0.1"

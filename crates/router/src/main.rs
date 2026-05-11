@@ -1,4 +1,4 @@
-//! Binary entry point for the tokendog-router gateway.
+//! Binary entry point for the router gateway.
 
 use std::sync::Arc;
 
@@ -6,8 +6,9 @@ use clap::Parser;
 use tokio::net::TcpListener;
 use tracing_subscriber::EnvFilter;
 
-use tokendog_router::{
-    build_router, config::Config, policies::round_robin::RoundRobin, state::AppState,
+use router::{
+    build_router, config::Config, policies::round_robin::RoundRobin, shutdown_signal,
+    state::AppState,
 };
 
 /// Entry point: parse configuration, start the HTTP server, and wait for shutdown.
@@ -30,7 +31,7 @@ async fn main() {
         host = %config.host,
         port = config.port,
         worker_urls = ?config.worker_urls,
-        "Starting tokendog-router",
+        "Starting router",
     );
 
     // Build application state and router.
@@ -52,30 +53,4 @@ async fn main() {
         .with_graceful_shutdown(shutdown_signal())
         .await
         .expect("Server error");
-}
-
-/// Wait for a shutdown signal (Ctrl+C or SIGTERM).
-async fn shutdown_signal() {
-    let ctrl_c = tokio::signal::ctrl_c();
-
-    #[cfg(unix)]
-    let mut sigterm = tokio::signal::unix::signal(
-        tokio::signal::unix::SignalKind::terminate(),
-    )
-    .expect("failed to install SIGTERM handler");
-
-    #[cfg(not(unix))]
-    let term = std::future::pending::<()>();
-
-    #[cfg(unix)]
-    let term = sigterm.recv();
-
-    tokio::select! {
-        _ = ctrl_c => {
-            tracing::info!("Ctrl+C received, shutting down");
-        }
-        _ = term => {
-            tracing::info!("SIGTERM received, shutting down");
-        }
-    }
 }
