@@ -29,6 +29,14 @@ maturin build --release
 pip install ../target/wheels/router-*.whl
 ```
 
+Use from the command line:
+
+```bash
+router --port 30000 --worker-urls http://192.168.1.10:8000 http://192.168.1.20:8000
+```
+
+Or as a library in Python:
+
 ```python
 from router import Router
 
