@@ -24,6 +24,18 @@ use crate::state::AppState;
 /// Maximum request body size to collect in memory: 16 MB.
 const MAX_BODY_SIZE: usize = 16 * 1024 * 1024;
 
+/// RAII guard that decrements the balancer's active-request counter on drop.
+struct ActiveRequest<'a> {
+    state: &'a AppState,
+    idx: usize,
+}
+
+impl Drop for ActiveRequest<'_> {
+    fn drop(&mut self) {
+        self.state.finish_request(self.idx);
+    }
+}
+
 /// Handle an incoming request by forwarding it to the next worker.
 ///
 /// # Errors
@@ -51,7 +63,12 @@ pub async fn proxy_handler(
     // Remove the Host header so reqwest sets it from the target URL.
     parts.headers.remove(http::header::HOST);
 
-    let worker_url = state.next_worker();
+    let (worker_idx, worker_url) = state.next_worker();
+    let _active = ActiveRequest {
+        state: &state,
+        idx: worker_idx,
+    };
+
     let path_and_query = parts
         .uri
         .path_and_query()

@@ -28,14 +28,14 @@ fn test_next_worker_returns_valid_url() {
         30,
         RoundRobin::new(),
     );
-    let worker = state.next_worker();
+    let (_idx, worker) = state.next_worker();
     assert_eq!(worker, "http://worker1:8000");
 }
 
 #[test]
 fn test_round_robin_cycles_through_workers() {
     let rr = RoundRobin::new();
-    let workers: Vec<String> = vec!["a", "b", "c"].iter().map(|s| s.to_string()).collect();
+    let workers: Vec<String> = ["a", "b", "c"].iter().map(|s| s.to_string()).collect();
 
     assert_eq!(rr.select(&workers), 0);
     assert_eq!(rr.select(&workers), 1);
@@ -74,20 +74,17 @@ fn test_next_worker_round_robin_sequence() {
         RoundRobin::new(),
     );
 
-    assert_eq!(state.next_worker(), "http://a:8000");
-    assert_eq!(state.next_worker(), "http://b:8000");
-    assert_eq!(state.next_worker(), "http://c:8000");
-    assert_eq!(state.next_worker(), "http://a:8000");
-    assert_eq!(state.next_worker(), "http://b:8000");
+    assert_eq!(state.next_worker().1, "http://a:8000");
+    assert_eq!(state.next_worker().1, "http://b:8000");
+    assert_eq!(state.next_worker().1, "http://c:8000");
+    assert_eq!(state.next_worker().1, "http://a:8000");
+    assert_eq!(state.next_worker().1, "http://b:8000");
 }
 
 #[tokio::test]
 async fn test_next_worker_concurrent_access() {
     let state = Arc::new(AppState::new(
-        vec![
-            "http://a:8000".to_string(),
-            "http://b:8000".to_string(),
-        ],
+        vec!["http://a:8000".to_string(), "http://b:8000".to_string()],
         30,
         RoundRobin::new(),
     ));
@@ -101,6 +98,7 @@ async fn test_next_worker_concurrent_access() {
     }
 
     for h in handles {
-        h.await.expect("concurrent next_worker calls should not panic");
+        h.await
+            .expect("concurrent next_worker calls should not panic");
     }
 }

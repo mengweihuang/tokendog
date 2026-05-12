@@ -11,7 +11,7 @@ fn test_log_level_to_tracing_level() {
 
 #[test]
 fn test_config_defaults() {
-    let config = Config::try_parse_from(&["router", "--worker-urls", "http://localhost:8000"])
+    let config = Config::try_parse_from(["router", "--worker-urls", "http://localhost:8000"])
         .expect("Config should parse with valid worker URL");
     assert_eq!(config.host, "0.0.0.0");
     assert_eq!(config.port, 30000);
@@ -21,7 +21,7 @@ fn test_config_defaults() {
 
 #[test]
 fn test_config_custom_values() {
-    let config = Config::try_parse_from(&[
+    let config = Config::try_parse_from([
         "router",
         "--host",
         "127.0.0.1",
@@ -40,14 +40,18 @@ fn test_config_custom_values() {
     assert_eq!(config.host, "127.0.0.1");
     assert_eq!(config.port, 8080);
     assert_eq!(config.worker_urls.len(), 2);
-    assert!(config.worker_urls.contains(&"http://worker1:8000".to_string()));
-    assert!(config.worker_urls.contains(&"http://worker2:8000".to_string()));
+    assert!(config
+        .worker_urls
+        .contains(&"http://worker1:8000".to_string()));
+    assert!(config
+        .worker_urls
+        .contains(&"http://worker2:8000".to_string()));
     assert_eq!(config.request_timeout_secs, 60);
 }
 
 #[test]
 fn test_config_single_worker() {
-    let config = Config::try_parse_from(&["router", "--worker-urls", "http://localhost:8000"])
+    let config = Config::try_parse_from(["router", "--worker-urls", "http://localhost:8000"])
         .expect("Config should parse with single worker");
     assert_eq!(config.worker_urls.len(), 1);
     assert_eq!(config.worker_urls[0], "http://localhost:8000");
@@ -55,7 +59,7 @@ fn test_config_single_worker() {
 
 #[test]
 fn test_config_multiple_workers() {
-    let config = Config::try_parse_from(&[
+    let config = Config::try_parse_from([
         "router",
         "--worker-urls",
         "http://worker1:8000",

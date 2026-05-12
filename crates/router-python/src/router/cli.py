@@ -39,6 +39,12 @@ def main() -> None:
         choices=["error", "warn", "info", "debug"],
         help="Log level (default: info)",
     )
+    parser.add_argument(
+        "--policy",
+        default="least-loaded",
+        choices=["least-loaded", "power-of-two", "random", "round-robin"],
+        help="Load-balancing policy (default: least-loaded)",
+    )
 
     args = parser.parse_args()
 
@@ -54,6 +60,7 @@ def main() -> None:
         port=args.port,
         request_timeout_secs=args.request_timeout_secs,
         log_level=args.log_level,
+        policy=args.policy,
     )
     gateway.serve()
 

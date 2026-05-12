@@ -1,5 +1,18 @@
 use clap::Parser;
 
+/// Load-balancing policy selection.
+#[derive(clap::ValueEnum, Debug, Clone, Copy)]
+pub enum Policy {
+    /// Least-loaded (default) — selects the worker with fewest in-flight requests.
+    LeastLoaded,
+    /// Power of two choices — picks two random workers, selects the one with fewer in-flight requests.
+    PowerOfTwo,
+    /// Random — picks a worker uniformly at random.
+    Random,
+    /// Round-robin — cycles through workers sequentially.
+    RoundRobin,
+}
+
 /// Log level for filtering tracing output.
 #[derive(clap::ValueEnum, Debug, Clone, Copy)]
 pub enum LogLevel {
@@ -46,6 +59,10 @@ pub struct Config {
     /// Maximum time in seconds to wait for a worker response.
     #[arg(long, env = "REQUEST_TIMEOUT", default_value = "300")]
     pub request_timeout_secs: u64,
+
+    /// Load-balancing policy (least-loaded, power-of-two, random, round-robin).
+    #[arg(long, env = "POLICY", default_value = "least-loaded")]
+    pub policy: Policy,
 
     /// Minimum log level (error, warn, info, debug).
     #[arg(long, env = "LOG_LEVEL", default_value = "info")]

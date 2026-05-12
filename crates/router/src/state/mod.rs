@@ -42,9 +42,17 @@ impl AppState {
         }
     }
 
-    /// Return the next worker URL using the configured load-balancing policy.
-    pub fn next_worker(&self) -> &str {
+    /// Return the index and URL of the next worker using the configured policy.
+    ///
+    /// Also notifies the balancer that a request has started on this worker.
+    pub fn next_worker(&self) -> (usize, &str) {
         let idx = self.balancer.select(&self.worker_urls);
-        &self.worker_urls[idx]
+        self.balancer.on_request_start(idx);
+        (idx, &self.worker_urls[idx])
+    }
+
+    /// Notify the balancer that the request to `worker_idx` has completed.
+    pub fn finish_request(&self, worker_idx: usize) {
+        self.balancer.on_request_end(worker_idx);
     }
 }
