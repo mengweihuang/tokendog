@@ -32,10 +32,7 @@ fn test_filter_hop_by_hop_removes_all_hop_by_hop() {
 
     let filtered = filter_hop_by_hop(&headers);
 
-    let names: Vec<&str> = filtered
-        .iter()
-        .map(|(n, _)| n.as_str())
-        .collect();
+    let names: Vec<&str> = filtered.iter().map(|(n, _)| n.as_str()).collect();
 
     assert_eq!(filtered.len(), 2);
     assert!(names.contains(&"content-type"));

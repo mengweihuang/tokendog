@@ -54,5 +54,3 @@ output/
 # debug information files
 *.dwo
 
-# agent
-.claude

@@ -3,9 +3,9 @@ use std::sync::Arc;
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use http_body_util::BodyExt;
+use router::build_router;
 use router::policies::round_robin::RoundRobin;
 use router::state::AppState;
-use router::build_router;
 use tower::util::ServiceExt;
 
 #[tokio::test]

@@ -2,9 +2,9 @@ use std::sync::Arc;
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
+use router::build_router;
 use router::policies::round_robin::RoundRobin;
 use router::state::AppState;
-use router::build_router;
 use tower::util::ServiceExt;
 
 #[tokio::test]
@@ -48,12 +48,7 @@ async fn test_proxy_handler_invalid_worker_url() {
     let app = build_router(state);
 
     let response = app
-        .oneshot(
-            Request::builder()
-                .uri("/test")
-                .body(Body::empty())
-                .unwrap(),
-        )
+        .oneshot(Request::builder().uri("/test").body(Body::empty()).unwrap())
         .await
         .expect("router should handle proxy request");
 

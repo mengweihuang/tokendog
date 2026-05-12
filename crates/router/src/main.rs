@@ -7,7 +7,13 @@ use tokio::net::TcpListener;
 use tracing_subscriber::EnvFilter;
 
 use router::{
-    build_router, config::Config, policies::round_robin::RoundRobin, shutdown_signal,
+    build_router,
+    config::Config,
+    policies::{
+        least_loaded::LeastLoaded, power_of_two::PowerOfTwo, random::Random,
+        round_robin::RoundRobin,
+    },
+    shutdown_signal,
     state::AppState,
 };
 
@@ -31,15 +37,39 @@ async fn main() {
         host = %config.host,
         port = config.port,
         worker_urls = ?config.worker_urls,
+        policy = ?config.policy,
         "Starting router",
     );
 
-    // Build application state and router.
-    let state = Arc::new(AppState::new(
-        config.worker_urls,
-        config.request_timeout_secs,
-        RoundRobin::new(),
-    ));
+    // Build application state with the selected load-balancing policy.
+    let state: Arc<AppState> = match config.policy {
+        router::config::Policy::LeastLoaded => {
+            let n = config.worker_urls.len();
+            Arc::new(AppState::new(
+                config.worker_urls,
+                config.request_timeout_secs,
+                LeastLoaded::new(n),
+            ))
+        }
+        router::config::Policy::PowerOfTwo => {
+            let n = config.worker_urls.len();
+            Arc::new(AppState::new(
+                config.worker_urls,
+                config.request_timeout_secs,
+                PowerOfTwo::new(n),
+            ))
+        }
+        router::config::Policy::Random => Arc::new(AppState::new(
+            config.worker_urls,
+            config.request_timeout_secs,
+            Random,
+        )),
+        router::config::Policy::RoundRobin => Arc::new(AppState::new(
+            config.worker_urls.clone(),
+            config.request_timeout_secs,
+            RoundRobin::new(),
+        )),
+    };
     let app = build_router(state);
 
     // Bind the TCP listener and start serving.

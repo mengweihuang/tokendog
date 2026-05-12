@@ -8,9 +8,25 @@ use tokio::net::TcpListener;
 use tracing_subscriber::EnvFilter;
 
 use router::build_router;
-use router::policies::round_robin::RoundRobin;
+use router::policies::{
+    least_loaded::LeastLoaded, power_of_two::PowerOfTwo, random::Random, round_robin::RoundRobin,
+};
 use router::shutdown_signal;
 use router::state::AppState;
+
+/// Validates a policy string and returns it normalized.
+fn validate_policy(policy: &str) -> PyResult<String> {
+    match policy.to_lowercase().as_str() {
+        "least-loaded" | "least_loaded" => Ok("least-loaded".to_string()),
+        "power-of-two" | "power_of_two" => Ok("power-of-two".to_string()),
+        "random" => Ok("random".to_string()),
+        "round-robin" | "round_robin" => Ok("round-robin".to_string()),
+        _ => Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+            "Invalid policy '{}', expected one of: least-loaded, power-of-two, random, round-robin",
+            policy
+        ))),
+    }
+}
 
 /// Python-facing gateway router.
 ///
@@ -22,6 +38,7 @@ use router::state::AppState;
 ///     port: Bind port for the HTTP listener.
 ///     request_timeout_secs: Timeout in seconds for upstream requests.
 ///     log_level: Log level — one of "error", "warn", "info", "debug".
+///     policy: Load-balancing policy — "least-loaded" (default), "power-of-two", "random", or "round-robin".
 #[pyclass]
 struct Router {
     #[pyo3(get)]
@@ -34,26 +51,31 @@ struct Router {
     request_timeout_secs: u64,
     #[pyo3(get)]
     log_level: String,
+    #[pyo3(get)]
+    policy: String,
 }
 
 #[pymethods]
 impl Router {
     #[new]
-    #[pyo3(signature = (worker_urls, host="0.0.0.0", port=30000, request_timeout_secs=300, log_level="info"))]
+    #[pyo3(signature = (worker_urls, host="0.0.0.0", port=30000, request_timeout_secs=300, log_level="info", policy="least-loaded"))]
     fn new(
         worker_urls: Vec<String>,
         host: &str,
         port: u16,
         request_timeout_secs: u64,
         log_level: &str,
-    ) -> Self {
-        Router {
+        policy: &str,
+    ) -> PyResult<Self> {
+        let policy = validate_policy(policy)?;
+        Ok(Router {
             worker_urls,
             host: host.to_string(),
             port,
             request_timeout_secs,
             log_level: log_level.to_string(),
-        }
+            policy,
+        })
     }
 
     /// Start the gateway server (blocking call, runs until shutdown signal).
@@ -84,6 +106,7 @@ impl Router {
 
         let worker_urls = self.worker_urls.clone();
         let timeout_secs = self.request_timeout_secs;
+        let policy = self.policy.clone();
 
         // Release the GIL before blocking on the async server loop.
         let result: Result<(), String> = py.allow_threads(move || {
@@ -103,14 +126,38 @@ impl Router {
                 host = %ip,
                 port = addr.port(),
                 worker_urls = ?worker_urls,
+                policy = %policy,
                 "Starting router (Python bindings)",
             );
 
-            let state = Arc::new(AppState::new(
-                worker_urls,
-                timeout_secs,
-                RoundRobin::new(),
-            ));
+            let state: Arc<AppState> = match policy.as_str() {
+                "least-loaded" => {
+                    let n = worker_urls.len();
+                    Arc::new(AppState::new(
+                        worker_urls,
+                        timeout_secs,
+                        LeastLoaded::new(n),
+                    ))
+                }
+                "power-of-two" => {
+                    let n = worker_urls.len();
+                    Arc::new(AppState::new(
+                        worker_urls,
+                        timeout_secs,
+                        PowerOfTwo::new(n),
+                    ))
+                }
+                "random" => Arc::new(AppState::new(
+                    worker_urls,
+                    timeout_secs,
+                    Random,
+                )),
+                _ => Arc::new(AppState::new(
+                    worker_urls,
+                    timeout_secs,
+                    RoundRobin::new(),
+                )),
+            };
 
             let app = build_router(state);
 
