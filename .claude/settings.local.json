@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(rtk ls *)",
+      "Bash(rtk find *)",
+      "Bash(rtk git *)",
+      "Bash(rtk read *)",
+      "Bash(git *)",
+      "Bash(rustc --version)",
+      "Bash(cargo --version)",
+      "Bash(cargo search *)",
+      "Bash(rtk cargo *)",
+      "Skill(code-review-skill)",
+      "Bash(python -m maturin --version)",
+      "Bash(rtk pip *)",
+      "Bash(python -m maturin build --release)",
+      "Bash(python *)",
+      "Bash(rtk pre-commit *)",
+      "Bash(ruff --version)",
+      "Bash(rtk make *)"
+    ]
+  }
+}

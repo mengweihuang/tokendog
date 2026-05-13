@@ -42,7 +42,15 @@ def main() -> None:
     parser.add_argument(
         "--policy",
         default="least-loaded",
-        choices=["least-loaded", "power-of-two", "random", "round-robin"],
+        choices=[
+            "least-loaded",
+            "power-of-two",
+            "random",
+            "round-robin",
+            "session-affinity",
+            "prefix-affinity",
+            "load-cache-aware",
+        ],
         help="Load-balancing policy (default: least-loaded)",
     )
 

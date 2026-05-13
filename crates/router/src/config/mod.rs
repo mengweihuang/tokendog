@@ -11,6 +11,17 @@ pub enum Policy {
     Random,
     /// Round-robin — cycles through workers sequentially.
     RoundRobin,
+    /// Session affinity — deterministic hash on user/session_id so multi-turn
+    /// conversations always land on the same worker.
+    SessionAffinity,
+    /// Prefix affinity — hash on first-message prefix with queue-depth
+    /// threshold; falls back to join-shortest-queue when the preferred
+    /// worker is overloaded.
+    PrefixAffinity,
+    /// Load + cache-aware scoring — balances cache affinity (who has the
+    /// prefix/session cached) against current load using configurable
+    /// `alpha`/`beta` weights.
+    LoadCacheAware,
 }
 
 /// Log level for filtering tracing output.

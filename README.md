@@ -65,7 +65,7 @@ Client                  tokendog                   Backend vLLM/SGLang
 
 - **Transparent**: requests forwarded verbatim — no API coupling
 - **Streaming-first**: SSE frames forwarded without buffering (`bytes_stream → from_stream`)
-- **Pluggable LB**: `LoadBalancer` trait — currently `RoundRobin` via lock-free `AtomicUsize`
+- **Pluggable LB**: `LoadBalancer` trait — 7 built-in policies including cache-aware routing (session affinity, prefix affinity, load-cache-aware scoring)
 
 ## Configuration
 
@@ -78,6 +78,7 @@ All options via CLI args or env vars:
 | `--worker-urls` | `WORKER_URLS` | *(required)* | Backend URLs (space-separated) |
 | `--request-timeout-secs` | `REQUEST_TIMEOUT` | `300` | Worker timeout (seconds) |
 | `--log-level` | `LOG_LEVEL` | `info` | Log filter: error, warn, info, debug |
+| `--policy` | `POLICY` | `least-loaded` | Load-balancing policy (see [router README](crates/router/README.md)) |
 
 ## Development
 
