@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 
-use crate::policies::LoadBalancer;
+use crate::policies::{LoadBalancer, RequestContext};
 
 /// Shared application state holding worker URL list, HTTP client, and load balancer.
 pub struct AppState {
@@ -45,8 +45,18 @@ impl AppState {
     /// Return the index and URL of the next worker using the configured policy.
     ///
     /// Also notifies the balancer that a request has started on this worker.
+    /// Prefer [`next_worker_with_context`](Self::next_worker_with_context) when
+    /// request context is available so cache-aware policies can use it.
     pub fn next_worker(&self) -> (usize, &str) {
         let idx = self.balancer.select(&self.worker_urls);
+        self.balancer.on_request_start(idx);
+        (idx, &self.worker_urls[idx])
+    }
+
+    /// Return the index and URL of the next worker, using request context for
+    /// cache-aware routing decisions.
+    pub fn next_worker_with_context(&self, ctx: &RequestContext) -> (usize, &str) {
+        let idx = self.balancer.select_with_context(&self.worker_urls, ctx);
         self.balancer.on_request_start(idx);
         (idx, &self.worker_urls[idx])
     }
@@ -54,5 +64,11 @@ impl AppState {
     /// Notify the balancer that the request to `worker_idx` has completed.
     pub fn finish_request(&self, worker_idx: usize) {
         self.balancer.on_request_end(worker_idx);
+    }
+
+    /// Record a completed routing decision so cache-aware policies can update
+    /// their affinity state for future requests.
+    pub fn record_request(&self, ctx: &RequestContext, worker_idx: usize) {
+        self.balancer.record(ctx, worker_idx);
     }
 }

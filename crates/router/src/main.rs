@@ -10,8 +10,9 @@ use router::{
     build_router,
     config::Config,
     policies::{
-        least_loaded::LeastLoaded, power_of_two::PowerOfTwo, random::Random,
-        round_robin::RoundRobin,
+        least_loaded::LeastLoaded, load_cache_aware::LoadCacheAware, power_of_two::PowerOfTwo,
+        prefix_affinity::PrefixAffinity, random::Random, round_robin::RoundRobin,
+        session_affinity::SessionAffinity,
     },
     shutdown_signal,
     state::AppState,
@@ -69,6 +70,27 @@ async fn main() {
             config.request_timeout_secs,
             RoundRobin::new(),
         )),
+        router::config::Policy::SessionAffinity => Arc::new(AppState::new(
+            config.worker_urls.clone(),
+            config.request_timeout_secs,
+            SessionAffinity,
+        )),
+        router::config::Policy::PrefixAffinity => {
+            let n = config.worker_urls.len();
+            Arc::new(AppState::new(
+                config.worker_urls,
+                config.request_timeout_secs,
+                PrefixAffinity::new(n),
+            ))
+        }
+        router::config::Policy::LoadCacheAware => {
+            let n = config.worker_urls.len();
+            Arc::new(AppState::new(
+                config.worker_urls,
+                config.request_timeout_secs,
+                LoadCacheAware::new(n),
+            ))
+        }
     };
     let app = build_router(state);
 

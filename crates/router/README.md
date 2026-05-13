@@ -31,7 +31,7 @@ crates/router/src/
 ├── main.rs              # Binary entry point: config → state → server → shutdown
 ├── lib.rs               # Module tree, build_router(), shutdown_signal()
 ├── config/
-│   └── mod.rs           # CLI/env configuration (Config struct + LogLevel enum)
+│   └── mod.rs           # CLI/env configuration (Config struct + Policy enum + LogLevel enum)
 ├── state/
 │   └── mod.rs           # AppState: shared HTTP client + worker list + load balancer
 ├── proxy/
@@ -41,8 +41,14 @@ crates/router/src/
 ├── health/
 │   └── mod.rs           # GET /health endpoint
 └── policies/
-    ├── mod.rs           # LoadBalancer trait
-    └── round_robin.rs   # RoundRobin implementation (lock-free AtomicUsize)
+    ├── mod.rs           # LoadBalancer trait + RequestContext
+    ├── least_loaded.rs  # Least-loaded (min in-flight requests)
+    ├── power_of_two.rs  # Power of two choices
+    ├── random.rs        # Uniform random
+    ├── round_robin.rs   # Round-robin (lock-free AtomicUsize)
+    ├── session_affinity.rs    # Deterministic hash on user/session_id
+    ├── prefix_affinity.rs     # Hash on first-message prefix with queue-threshold fallback
+    └── load_cache_aware.rs    # CacheDirectory + alpha/beta scoring
 ```
 
 ### Request flow
@@ -118,6 +124,7 @@ All options can be set via CLI arguments or environment variables:
 | `--port` | `PORT` | `30000` | Gateway listen port |
 | `--worker-urls` | `WORKER_URLS` | *(required)* | Space-separated worker URLs |
 | `--request-timeout-secs` | `REQUEST_TIMEOUT` | `300` | Worker response timeout |
+| `--policy` | `POLICY` | `least-loaded` | Load-balancing policy (see below) |
 | `--log-level` | `LOG_LEVEL` | `info` | Log filter: error, warn, info, debug |
 
 ```bash
@@ -133,8 +140,24 @@ WORKER_URLS="http://192.168.1.10:8000 http://192.168.1.20:8000" cargo run
 The [`LoadBalancer`] trait allows switching strategies without modifying the proxy logic:
 
 ```rust
+pub struct RequestContext {
+    pub session_id: String,   // from "user" or "session_id" field
+    pub prefix_key: String,   // first 200 chars of first message content
+}
+
 pub trait LoadBalancer: Send + Sync {
     fn select(&self, workers: &[String]) -> usize;
+
+    // Override this for cache-aware routing; default calls select().
+    fn select_with_context(&self, workers: &[String], ctx: &RequestContext) -> usize {
+        self.select(workers)
+    }
+
+    fn on_request_start(&self, _worker_idx: usize) {}
+    fn on_request_end(&self, _worker_idx: usize) {}
+
+    // Override to update cache-affinity state after a completed request.
+    fn record(&self, _ctx: &RequestContext, _worker_idx: usize) {}
 }
 ```
 
@@ -142,14 +165,23 @@ pub trait LoadBalancer: Send + Sync {
 
 | Policy | File | Strategy |
 |--------|------|----------|
+| `LeastLoaded` | `policies/least_loaded.rs` | Full-scan min in-flight requests |
+| `PowerOfTwo` | `policies/power_of_two.rs` | Two random choices, pick the less busy |
+| `Random` | `policies/random.rs` | Uniform random |
 | `RoundRobin` | `policies/round_robin.rs` | Lock-free `AtomicUsize` counter |
+| `SessionAffinity` | `policies/session_affinity.rs` | Deterministic hash on `user`/`session_id` |
+| `PrefixAffinity` | `policies/prefix_affinity.rs` | Hash on first-message prefix, JSQ fallback when overloaded |
+| `LoadCacheAware` | `policies/load_cache_aware.rs` | `alpha * cache_affinity - beta * load` scoring |
 
 ### Adding a new policy
 
-Create a new file in `policies/`:
+Create a new file in `policies/`, declare it in `policies/mod.rs`, and add a variant to the `Policy` enum in `config/mod.rs`:
 
 ```rust
 // crates/router/src/policies/weighted.rs
+use std::sync::atomic::AtomicUsize;
+use crate::policies::{LoadBalancer, RequestContext};
+
 pub struct Weighted {
     weights: Vec<usize>,
     counter: AtomicUsize,
@@ -157,12 +189,13 @@ pub struct Weighted {
 
 impl LoadBalancer for Weighted {
     fn select(&self, workers: &[String]) -> usize {
-        // Custom selection logic
+        // Load-only: delegate to select() default.
+        // Cache-aware: override select_with_context() to inspect RequestContext.
     }
 }
 ```
 
-Then register it in `policies/mod.rs` and use it via `AppState::new(worker_urls, timeout, Weighted::new(...))`.
+Then register it in `main.rs`, `router-python/src/lib.rs`, and `router-python/src/router/cli.py`.
 
 ## SSE Streaming
 

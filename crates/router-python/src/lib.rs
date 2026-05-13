@@ -9,7 +9,9 @@ use tracing_subscriber::EnvFilter;
 
 use router::build_router;
 use router::policies::{
-    least_loaded::LeastLoaded, power_of_two::PowerOfTwo, random::Random, round_robin::RoundRobin,
+    least_loaded::LeastLoaded, load_cache_aware::LoadCacheAware, power_of_two::PowerOfTwo,
+    prefix_affinity::PrefixAffinity, random::Random, round_robin::RoundRobin,
+    session_affinity::SessionAffinity,
 };
 use router::shutdown_signal;
 use router::state::AppState;
@@ -21,8 +23,11 @@ fn validate_policy(policy: &str) -> PyResult<String> {
         "power-of-two" | "power_of_two" => Ok("power-of-two".to_string()),
         "random" => Ok("random".to_string()),
         "round-robin" | "round_robin" => Ok("round-robin".to_string()),
+        "session-affinity" | "session_affinity" => Ok("session-affinity".to_string()),
+        "prefix-affinity" | "prefix_affinity" => Ok("prefix-affinity".to_string()),
+        "load-cache-aware" | "load_cache_aware" => Ok("load-cache-aware".to_string()),
         _ => Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
-            "Invalid policy '{}', expected one of: least-loaded, power-of-two, random, round-robin",
+            "Invalid policy '{}', expected one of: least-loaded, power-of-two, random, round-robin, session-affinity, prefix-affinity, load-cache-aware",
             policy
         ))),
     }
@@ -38,7 +43,9 @@ fn validate_policy(policy: &str) -> PyResult<String> {
 ///     port: Bind port for the HTTP listener.
 ///     request_timeout_secs: Timeout in seconds for upstream requests.
 ///     log_level: Log level — one of "error", "warn", "info", "debug".
-///     policy: Load-balancing policy — "least-loaded" (default), "power-of-two", "random", or "round-robin".
+///     policy: Load-balancing policy — "least-loaded" (default), "power-of-two",
+///         "random", "round-robin", "session-affinity", "prefix-affinity",
+///         or "load-cache-aware".
 #[pyclass]
 struct Router {
     #[pyo3(get)]
@@ -152,6 +159,27 @@ impl Router {
                     timeout_secs,
                     Random,
                 )),
+                "session-affinity" => Arc::new(AppState::new(
+                    worker_urls,
+                    timeout_secs,
+                    SessionAffinity,
+                )),
+                "prefix-affinity" => {
+                    let n = worker_urls.len();
+                    Arc::new(AppState::new(
+                        worker_urls,
+                        timeout_secs,
+                        PrefixAffinity::new(n),
+                    ))
+                }
+                "load-cache-aware" => {
+                    let n = worker_urls.len();
+                    Arc::new(AppState::new(
+                        worker_urls,
+                        timeout_secs,
+                        LoadCacheAware::new(n),
+                    ))
+                }
                 _ => Arc::new(AppState::new(
                     worker_urls,
                     timeout_secs,
