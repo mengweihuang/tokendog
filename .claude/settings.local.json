@@ -17,7 +17,8 @@
       "Bash(python *)",
       "Bash(rtk pre-commit *)",
       "Bash(ruff --version)",
-      "Bash(rtk make *)"
+      "Bash(rtk make *)",
+      "Bash(rtk wc *)"
     ]
   }
 }

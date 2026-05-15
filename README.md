@@ -47,7 +47,30 @@ gateway = Router(
 gateway.serve()  # blocks until Ctrl+C
 ```
 
-See [examples/](examples/) for more.
+See [examples/](examples/) for more (including PD separation).
+
+## Prefill-Decode (PD) Separation
+
+The gateway supports disaggregated prefill/decode mode for both vLLM and SGLang:
+
+| Runtime | Mode | Execution | KV Transfer |
+|---------|------|-----------|-------------|
+| vLLM | Sequential | Prefill (`max_tokens=1`) → decode | `kv_transfer_params` (Nixl) |
+| SGLang | Concurrent | Prefill + decode simultaneously | `bootstrap_host/port/room` |
+
+```bash
+# vLLM PD mode
+cargo run -- --pd-mode vllm \
+    --prefill-urls http://prefill1:8000 http://prefill2:8000 \
+    --decode-urls http://decode1:8000 http://decode2:8000 \
+    --policy least-loaded
+
+# SGLang PD mode
+cargo run -- --pd-mode sglang \
+    --prefill-urls http://prefill1:8000 \
+    --decode-urls http://decode1:8000 \
+    --policy round-robin
+```
 
 ## Architecture
 
@@ -79,6 +102,9 @@ All options via CLI args or env vars:
 | `--request-timeout-secs` | `REQUEST_TIMEOUT` | `300` | Worker timeout (seconds) |
 | `--log-level` | `LOG_LEVEL` | `info` | Log filter: error, warn, info, debug |
 | `--policy` | `POLICY` | `least-loaded` | Load-balancing policy (see [router README](crates/router/README.md)) |
+| `--pd-mode` | `PD_MODE` | *(none)* | PD separation mode: `vllm` or `sglang` |
+| `--prefill-urls` | — | *(none)* | Prefill worker URLs for PD mode (space-separated) |
+| `--decode-urls` | — | *(none)* | Decode worker URLs for PD mode (space-separated) |
 
 ## Development
 

@@ -38,6 +38,9 @@ router --port 8000 --worker-urls http://127.0.0.1:8080
 | `--worker-urls` | `str...` | *(required)* | Worker URL(s), space or comma separated |
 | `--request-timeout-secs` | `int` | `300` | Upstream request timeout in seconds |
 | `--log-level` | `str` | `info` | Log level: `error`, `warn`, `info`, `debug` |
+| `--pd-mode` | `str` | *(none)* | PD mode: `vllm` or `sglang` |
+| `--prefill-urls` | `str...` | *(none)* | Prefill worker URLs for PD mode |
+| `--decode-urls` | `str...` | *(none)* | Decode worker URLs for PD mode |
 
 Multiple workers can be specified either with spaces or commas:
 
@@ -60,11 +63,15 @@ python -m router --port 8000 --worker-urls http://127.0.0.1:8080
 from router import Router
 
 gateway = Router(
-    worker_urls: list[str],           # required — backend worker URLs
-    host: str = "0.0.0.0",           # bind address
-    port: int = 30000,               # bind port
-    request_timeout_secs: int = 300,  # upstream timeout (seconds)
-    log_level: str = "info",         # error | warn | info | debug
+    worker_urls: list[str],                    # required — backend worker URLs
+    host: str = "0.0.0.0",                    # bind address
+    port: int = 30000,                        # bind port
+    request_timeout_secs: int = 300,           # upstream timeout (seconds)
+    log_level: str = "info",                  # error | warn | info | debug
+    policy: str = "least-loaded",             # load-balancing policy
+    pd_mode: str | None = None,               # "vllm" or "sglang" for PD mode
+    prefill_urls: list[str] | None = None,    # prefill workers (PD mode)
+    decode_urls: list[str] | None = None,     # decode workers (PD mode)
 )
 ```
 
@@ -133,6 +140,32 @@ gateway = Router(
 
 gateway.serve()
 # Requests are distributed across 4 workers via lock-free round-robin
+```
+
+### PD separation
+
+```python
+from router import Router
+
+# vLLM PD: sequential two-stage processing
+gateway = Router(
+    worker_urls=[],
+    pd_mode="vllm",
+    prefill_urls=["http://prefill1:8000", "http://prefill2:8000"],
+    decode_urls=["http://decode1:8000", "http://decode2:8000"],
+    policy="least-loaded",
+)
+gateway.serve()
+
+# SGLang PD: concurrent dual dispatch
+gateway = Router(
+    worker_urls=[],
+    pd_mode="sglang",
+    prefill_urls=["http://prefill1:8000"],
+    decode_urls=["http://decode1:8000"],
+    policy="round-robin",
+)
+gateway.serve()
 ```
 
 ## How It Works

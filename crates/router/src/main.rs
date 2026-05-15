@@ -8,15 +8,29 @@ use tracing_subscriber::EnvFilter;
 
 use router::{
     build_router,
-    config::Config,
+    config::{self, Config},
     policies::{
         least_loaded::LeastLoaded, load_cache_aware::LoadCacheAware, power_of_two::PowerOfTwo,
         prefix_affinity::PrefixAffinity, random::Random, round_robin::RoundRobin,
-        session_affinity::SessionAffinity,
+        session_affinity::SessionAffinity, LoadBalancer,
     },
     shutdown_signal,
     state::AppState,
 };
+
+/// Helper: construct a `LoadBalancer` implementation from the chosen policy
+/// and worker count.
+fn make_policy(policy: config::Policy, n: usize) -> Box<dyn LoadBalancer> {
+    match policy {
+        config::Policy::LeastLoaded => Box::new(LeastLoaded::new(n)),
+        config::Policy::PowerOfTwo => Box::new(PowerOfTwo::new(n)),
+        config::Policy::Random => Box::new(Random),
+        config::Policy::RoundRobin => Box::new(RoundRobin::new()),
+        config::Policy::SessionAffinity => Box::new(SessionAffinity),
+        config::Policy::PrefixAffinity => Box::new(PrefixAffinity::new(n)),
+        config::Policy::LoadCacheAware => Box::new(LoadCacheAware::new(n)),
+    }
+}
 
 /// Entry point: parse configuration, start the HTTP server, and wait for shutdown.
 #[tokio::main]
@@ -38,59 +52,42 @@ async fn main() {
         host = %config.host,
         port = config.port,
         worker_urls = ?config.worker_urls,
+        prefill_urls = ?config.prefill_urls,
+        decode_urls = ?config.decode_urls,
+        pd_mode = ?config.pd_mode,
         policy = ?config.policy,
         "Starting router",
     );
 
     // Build application state with the selected load-balancing policy.
-    let state: Arc<AppState> = match config.policy {
-        router::config::Policy::LeastLoaded => {
-            let n = config.worker_urls.len();
-            Arc::new(AppState::new(
-                config.worker_urls,
-                config.request_timeout_secs,
-                LeastLoaded::new(n),
-            ))
-        }
-        router::config::Policy::PowerOfTwo => {
-            let n = config.worker_urls.len();
-            Arc::new(AppState::new(
-                config.worker_urls,
-                config.request_timeout_secs,
-                PowerOfTwo::new(n),
-            ))
-        }
-        router::config::Policy::Random => Arc::new(AppState::new(
+    let state: Arc<AppState> = if let Some(pd_mode) = config.pd_mode {
+        assert!(
+            !config.prefill_urls.is_empty(),
+            "PD mode requires at least one --prefill-urls"
+        );
+        assert!(
+            !config.decode_urls.is_empty(),
+            "PD mode requires at least one --decode-urls"
+        );
+
+        let n_prefill = config.prefill_urls.len();
+        let n_decode = config.decode_urls.len();
+
+        Arc::new(AppState::new_pd(
+            pd_mode,
+            config.prefill_urls,
+            config.decode_urls,
+            config.request_timeout_secs,
+            make_policy(config.policy, n_prefill),
+            make_policy(config.policy, n_decode),
+        ))
+    } else {
+        let n = config.worker_urls.len();
+        Arc::new(AppState::new(
             config.worker_urls,
             config.request_timeout_secs,
-            Random,
-        )),
-        router::config::Policy::RoundRobin => Arc::new(AppState::new(
-            config.worker_urls.clone(),
-            config.request_timeout_secs,
-            RoundRobin::new(),
-        )),
-        router::config::Policy::SessionAffinity => Arc::new(AppState::new(
-            config.worker_urls.clone(),
-            config.request_timeout_secs,
-            SessionAffinity,
-        )),
-        router::config::Policy::PrefixAffinity => {
-            let n = config.worker_urls.len();
-            Arc::new(AppState::new(
-                config.worker_urls,
-                config.request_timeout_secs,
-                PrefixAffinity::new(n),
-            ))
-        }
-        router::config::Policy::LoadCacheAware => {
-            let n = config.worker_urls.len();
-            Arc::new(AppState::new(
-                config.worker_urls,
-                config.request_timeout_secs,
-                LoadCacheAware::new(n),
-            ))
-        }
+            make_policy(config.policy, n),
+        ))
     };
     let app = build_router(state);
 

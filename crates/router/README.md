@@ -40,6 +40,11 @@ crates/router/src/
 │   └── header.rs        # RFC 2616 hop-by-hop header filtering
 ├── health/
 │   └── mod.rs           # GET /health endpoint
+├── routes/
+│   ├── mod.rs           # PD route module declarations
+│   ├── pd_handler.rs    # PD proxy handler (two-stage / dual dispatch)
+│   ├── prefill.rs       # Prefill request construction + KV/boot params
+│   └── logprobs_merge.rs # Prompt logprobs merge for PD mode
 └── policies/
     ├── mod.rs           # LoadBalancer trait + RequestContext
     ├── least_loaded.rs  # Least-loaded (min in-flight requests)
@@ -114,6 +119,37 @@ axum::serve(listener, app)
     .await?;
 ```
 
+### PD mode (library API)
+
+```rust
+use router::{
+    build_router,
+    config::PdMode,
+    policies::round_robin::RoundRobin,
+    state::AppState,
+};
+
+// vLLM PD: sequential two-stage
+let state = AppState::new_pd(
+    PdMode::Vllm,
+    vec!["http://prefill1:8000".into(), "http://prefill2:8000".into()],
+    vec!["http://decode1:8000".into(), "http://decode2:8000".into()],
+    300,
+    Box::new(RoundRobin::new()),
+    Box::new(RoundRobin::new()),
+);
+
+// SGLang PD: concurrent dual dispatch
+let state = AppState::new_pd(
+    PdMode::Sglang,
+    vec!["http://prefill1:8000".into()],
+    vec!["http://decode1:8000".into()],
+    300,
+    Box::new(RoundRobin::new()),
+    Box::new(RoundRobin::new()),
+);
+```
+
 ## Configuration
 
 All options can be set via CLI arguments or environment variables:
@@ -126,6 +162,9 @@ All options can be set via CLI arguments or environment variables:
 | `--request-timeout-secs` | `REQUEST_TIMEOUT` | `300` | Worker response timeout |
 | `--policy` | `POLICY` | `least-loaded` | Load-balancing policy (see below) |
 | `--log-level` | `LOG_LEVEL` | `info` | Log filter: error, warn, info, debug |
+| `--pd-mode` | `PD_MODE` | *(none)* | PD separation: `vllm` (sequential) or `sglang` (concurrent) |
+| `--prefill-urls` | — | *(none)* | Prefill worker URLs for PD mode |
+| `--decode-urls` | — | *(none)* | Decode worker URLs for PD mode |
 
 ```bash
 # CLI args

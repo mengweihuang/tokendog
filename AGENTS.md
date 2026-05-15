@@ -7,7 +7,7 @@
 
 * Before any work, check local Python venv and activate if one exists.
 * Don't install pip packages outside the local Python venv if one exists.
-* Rust workspace root is at `crates/Cargo.toml` -- run all cargo commands from the `crates/` directory (e.g. `cd crates && cargo build`).
+* Refer to the Makefile and use make to build (e.g., `make build`).
 
 ## Code changes
 

@@ -13,7 +13,7 @@ async fn test_health_endpoint_returns_ok() {
     let state = Arc::new(AppState::new(
         vec!["http://localhost:8000".to_string()],
         30,
-        RoundRobin::new(),
+        Box::new(RoundRobin::new()),
     ));
     let app = build_router(state);
 
@@ -38,7 +38,7 @@ async fn test_health_endpoint_json_body() {
             "http://worker2:8000".to_string(),
         ],
         30,
-        RoundRobin::new(),
+        Box::new(RoundRobin::new()),
     ));
     let app = build_router(state);
 
@@ -67,7 +67,7 @@ async fn test_health_endpoint_single_worker() {
     let state = Arc::new(AppState::new(
         vec!["http://single:8000".to_string()],
         30,
-        RoundRobin::new(),
+        Box::new(RoundRobin::new()),
     ));
     let app = build_router(state);
 
@@ -94,7 +94,7 @@ async fn test_health_endpoint_content_type() {
     let state = Arc::new(AppState::new(
         vec!["http://localhost:8000".to_string()],
         30,
-        RoundRobin::new(),
+        Box::new(RoundRobin::new()),
     ));
     let app = build_router(state);
 

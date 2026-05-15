@@ -24,6 +24,19 @@ pub enum Policy {
     LoadCacheAware,
 }
 
+/// Prefill-Decode separation mode.
+///
+/// `None` (default) means regular mode where all workers handle both prefill and decode.
+/// `Some(Vllm)` enables vLLM PD separation with sequential two-stage processing.
+/// `Some(Sglang)` enables SGLang PD separation with concurrent dual dispatch.
+#[derive(clap::ValueEnum, Debug, Clone, Copy)]
+pub enum PdMode {
+    /// vLLM Prefill-Decode separation mode.
+    Vllm,
+    /// SGLang Prefill-Decode separation mode (concurrent dual dispatch).
+    Sglang,
+}
+
 /// Log level for filtering tracing output.
 #[derive(clap::ValueEnum, Debug, Clone, Copy)]
 pub enum LogLevel {
@@ -78,4 +91,16 @@ pub struct Config {
     /// Minimum log level (error, warn, info, debug).
     #[arg(long, env = "LOG_LEVEL", default_value = "info")]
     pub log_level: LogLevel,
+
+    /// Enable Prefill-Decode separation mode ("vllm" or "sglang").
+    #[arg(long, env = "PD_MODE")]
+    pub pd_mode: Option<PdMode>,
+
+    /// Comma-separated prefill worker URLs for PD mode.
+    #[arg(long, num_args = 0..)]
+    pub prefill_urls: Vec<String>,
+
+    /// Comma-separated decode worker URLs for PD mode.
+    #[arg(long, num_args = 0..)]
+    pub decode_urls: Vec<String>,
 }
