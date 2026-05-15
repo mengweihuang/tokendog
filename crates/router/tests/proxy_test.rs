@@ -13,7 +13,7 @@ async fn test_proxy_handler_backend_unreachable() {
         // Use a port that is very unlikely to have a listening service.
         vec!["http://127.0.0.1:1".to_string()],
         3,
-        RoundRobin::new(),
+        Box::new(RoundRobin::new()),
     ));
     let app = build_router(state);
 
@@ -43,7 +43,7 @@ async fn test_proxy_handler_invalid_worker_url() {
     let state = Arc::new(AppState::new(
         vec!["http://[::1]:8000".to_string()],
         3,
-        RoundRobin::new(),
+        Box::new(RoundRobin::new()),
     ));
     let app = build_router(state);
 

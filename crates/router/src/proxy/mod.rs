@@ -44,7 +44,7 @@ impl Drop for ActiveRequest<'_> {
 ///   then to `"default"`.
 /// - `prefix_key`: first 200 characters of the first message's `"content"`,
 ///   preferring `system`-role messages, defaulting to `"default"`.
-fn extract_context(body: &[u8]) -> RequestContext {
+pub(crate) fn extract_context(body: &[u8]) -> RequestContext {
     let default = RequestContext {
         session_id: "default".to_string(),
         prefix_key: "default".to_string(),

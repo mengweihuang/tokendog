@@ -53,6 +53,24 @@ def main() -> None:
         ],
         help="Load-balancing policy (default: least-loaded)",
     )
+    parser.add_argument(
+        "--pd-mode",
+        default=None,
+        choices=["vllm", "sglang"],
+        help="Prefill-Decode separation mode: vllm or sglang (default: None, disabled)",
+    )
+    parser.add_argument(
+        "--prefill-urls",
+        nargs="+",
+        default=[],
+        help="Prefill worker URL(s) for PD mode. Accepts space-separated and/or comma-separated values.",
+    )
+    parser.add_argument(
+        "--decode-urls",
+        nargs="+",
+        default=[],
+        help="Decode worker URL(s) for PD mode. Accepts space-separated and/or comma-separated values.",
+    )
 
     args = parser.parse_args()
 
@@ -62,6 +80,14 @@ def main() -> None:
     for u in args.worker_urls:
         worker_urls.extend(u.split(","))
 
+    prefill_urls: list[str] = []
+    for u in args.prefill_urls:
+        prefill_urls.extend(u.split(","))
+
+    decode_urls: list[str] = []
+    for u in args.decode_urls:
+        decode_urls.extend(u.split(","))
+
     gateway = Router(
         worker_urls=worker_urls,
         host=args.host,
@@ -69,6 +95,9 @@ def main() -> None:
         request_timeout_secs=args.request_timeout_secs,
         log_level=args.log_level,
         policy=args.policy,
+        pd_mode=args.pd_mode,
+        prefill_urls=prefill_urls if prefill_urls else None,
+        decode_urls=decode_urls if decode_urls else None,
     )
     gateway.serve()
 
