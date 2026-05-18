@@ -1,7 +1,7 @@
 //! Least-loaded worker selection policy with active-request tracking.
 
 use std::sync::atomic::{AtomicUsize, Ordering};
-
+use rand::Rng;
 use super::LoadBalancer;
 
 /// A least-loaded load balancer.
@@ -23,9 +23,10 @@ impl LeastLoaded {
 
 impl LoadBalancer for LeastLoaded {
     fn select(&self, workers: &[String]) -> usize {
-        let mut best = 0;
+        let n = workers.len();
+        let mut best = rand::thread_rng().gen_range(0..n);
         let mut least = self.active[0].load(Ordering::Relaxed);
-        for i in 1..workers.len() {
+        for i in 1..n {
             let load = self.active[i].load(Ordering::Relaxed);
             if load < least {
                 best = i;
