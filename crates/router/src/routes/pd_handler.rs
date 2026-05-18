@@ -20,7 +20,7 @@ use tracing::info;
 use url::Url;
 
 use super::{logprobs_merge, prefill};
-use crate::proxy::{extract_context, header::filter_hop_by_hop};
+use crate::proxy::{context::extract_context, header::filter_hop_by_hop};
 use crate::state::AppState;
 
 /// Maximum request body size: 16 MB.

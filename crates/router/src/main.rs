@@ -7,8 +7,7 @@ use tokio::net::TcpListener;
 use tracing_subscriber::EnvFilter;
 
 use router::{
-    build_router,
-    config::{self, Config},
+    auth::AuthConfig, build_router, config::{self, Config},
     policies::{
         least_loaded::LeastLoaded, load_cache_aware::LoadCacheAware, power_of_two::PowerOfTwo,
         prefix_affinity::PrefixAffinity, random::Random, round_robin::RoundRobin,
@@ -48,6 +47,9 @@ async fn main() {
 
     let listen_addr = format!("{}:{}", config.host, config.port);
 
+    let num_api_keys = config.data_plane_api_keys.len();
+    let auth_config = AuthConfig::new(Some(config.data_plane_api_keys));
+
     tracing::info!(
         host = %config.host,
         port = config.port,
@@ -56,6 +58,7 @@ async fn main() {
         decode_urls = ?config.decode_urls,
         pd_mode = ?config.pd_mode,
         policy = ?config.policy,
+        data_plane_auth = num_api_keys > 0,
         "Starting router",
     );
 
@@ -89,9 +92,7 @@ async fn main() {
             make_policy(config.policy, n),
         ))
     };
-    let app = build_router(state);
-
-    // Bind the TCP listener and start serving.
+    let app = build_router(state, auth_config);
     let listener = TcpListener::bind(&listen_addr)
         .await
         .expect("Failed to bind to listen address");
