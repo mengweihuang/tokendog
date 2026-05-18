@@ -71,6 +71,12 @@ def main() -> None:
         default=[],
         help="Decode worker URL(s) for PD mode. Accepts space-separated and/or comma-separated values.",
     )
+    parser.add_argument(
+        "--data-plane-api-keys",
+        nargs="+",
+        default=[],
+        help="API key(s) for data plane Bearer token authentication. Accepts space-separated and/or comma-separated values.",
+    )
 
     args = parser.parse_args()
 
@@ -88,6 +94,10 @@ def main() -> None:
     for u in args.decode_urls:
         decode_urls.extend(u.split(","))
 
+    data_plane_api_keys: list[str] = []
+    for u in args.data_plane_api_keys:
+        data_plane_api_keys.extend(u.split(","))
+
     gateway = Router(
         worker_urls=worker_urls,
         host=args.host,
@@ -98,6 +108,7 @@ def main() -> None:
         pd_mode=args.pd_mode,
         prefill_urls=prefill_urls if prefill_urls else None,
         decode_urls=decode_urls if decode_urls else None,
+        data_plane_api_keys=data_plane_api_keys if data_plane_api_keys else None,
     )
     gateway.serve()
 

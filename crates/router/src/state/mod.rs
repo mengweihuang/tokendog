@@ -1,9 +1,11 @@
 //! Application state with load-balancing policy and shared HTTP client.
 
-use std::time::Duration;
+pub mod client;
 
 use crate::config;
 use crate::policies::{LoadBalancer, RequestContext};
+
+use self::client::build_client;
 
 /// Shared application state holding worker URL list, HTTP client, and load balancer.
 pub struct AppState {
@@ -184,9 +186,3 @@ impl AppState {
     }
 }
 
-fn build_client(timeout_secs: u64) -> reqwest::Client {
-    reqwest::Client::builder()
-        .timeout(Duration::from_secs(timeout_secs))
-        .build()
-        .expect("Failed to build reqwest Client")
-}

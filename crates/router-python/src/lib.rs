@@ -7,6 +7,7 @@ use pyo3::prelude::*;
 use tokio::net::TcpListener;
 use tracing_subscriber::EnvFilter;
 
+use router::auth::AuthConfig;
 use router::build_router;
 use router::config::PdMode;
 use router::policies::{
@@ -49,7 +50,8 @@ fn make_policy(policy: &str, n: usize) -> Box<dyn LoadBalancer> {
 
 /// Python-facing gateway router.
 ///
-/// Wraps the router HTTP proxy with load-balanced worker selection.
+/// Wraps the router HTTP proxy with load-balanced worker selection
+/// and optional Bearer-token authentication.
 ///
 /// Args:
 ///     worker_urls: List of backend worker URLs (vLLM/SGLang endpoints).
@@ -63,6 +65,7 @@ fn make_policy(policy: &str, n: usize) -> Box<dyn LoadBalancer> {
 ///     pd_mode: Prefill-Decode separation mode — None (default), "vllm", or "sglang".
 ///     prefill_urls: Prefill worker URLs for PD mode.
 ///     decode_urls: Decode worker URLs for PD mode.
+///     data_plane_api_keys: Optional list of Bearer tokens for data plane auth.
 #[pyclass]
 struct Router {
     #[pyo3(get)]
@@ -83,12 +86,14 @@ struct Router {
     prefill_urls: Vec<String>,
     #[pyo3(get)]
     decode_urls: Vec<String>,
+    #[pyo3(get)]
+    data_plane_api_keys: Vec<String>,
 }
 
 #[pymethods]
 impl Router {
     #[new]
-    #[pyo3(signature = (worker_urls, host="0.0.0.0", port=30000, request_timeout_secs=300, log_level="info", policy="least-loaded", pd_mode=None, prefill_urls=None, decode_urls=None))]
+    #[pyo3(signature = (worker_urls, host="0.0.0.0", port=30000, request_timeout_secs=300, log_level="info", policy="least-loaded", pd_mode=None, prefill_urls=None, decode_urls=None, data_plane_api_keys=None))]
     #[allow(clippy::too_many_arguments)]
     fn new(
         worker_urls: Vec<String>,
@@ -100,6 +105,7 @@ impl Router {
         pd_mode: Option<&str>,
         prefill_urls: Option<Vec<String>>,
         decode_urls: Option<Vec<String>>,
+        data_plane_api_keys: Option<Vec<String>>,
     ) -> PyResult<Self> {
         let policy = validate_policy(policy)?;
         let pd_mode = match pd_mode {
@@ -124,6 +130,7 @@ impl Router {
             pd_mode,
             prefill_urls: prefill_urls.unwrap_or_default(),
             decode_urls: decode_urls.unwrap_or_default(),
+            data_plane_api_keys: data_plane_api_keys.unwrap_or_default(),
         })
     }
 
@@ -159,6 +166,7 @@ impl Router {
         let pd_mode = self.pd_mode.clone();
         let prefill_urls = self.prefill_urls.clone();
         let decode_urls = self.decode_urls.clone();
+        let data_plane_api_keys = self.data_plane_api_keys.clone();
 
         // Release the GIL before blocking on the async server loop.
         let result: Result<(), String> = py.allow_threads(move || {
@@ -174,6 +182,7 @@ impl Router {
                 }
             }
 
+            let num_api_keys = data_plane_api_keys.len();
             tracing::info!(
                 host = %ip,
                 port = addr.port(),
@@ -182,6 +191,7 @@ impl Router {
                 decode_urls = ?decode_urls,
                 pd_mode = ?pd_mode,
                 policy = %policy,
+                data_plane_auth = num_api_keys > 0,
                 "Starting router (Python bindings)",
             );
 
@@ -221,7 +231,8 @@ impl Router {
                 ))
             };
 
-            let app = build_router(state);
+            let auth_config = AuthConfig::new(Some(data_plane_api_keys));
+            let app = build_router(state, auth_config);
 
             let rt = tokio::runtime::Runtime::new().map_err(|e| {
                 format!("Failed to create Tokio runtime: {}", e)

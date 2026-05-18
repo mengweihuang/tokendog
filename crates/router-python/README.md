@@ -41,6 +41,7 @@ router --port 8000 --worker-urls http://127.0.0.1:8080
 | `--pd-mode` | `str` | *(none)* | PD mode: `vllm` or `sglang` |
 | `--prefill-urls` | `str...` | *(none)* | Prefill worker URLs for PD mode |
 | `--decode-urls` | `str...` | *(none)* | Decode worker URLs for PD mode |
+| `--data-plane-api-keys` | `str...` | *(none)* | API key(s) for data plane Bearer token authentication |
 
 Multiple workers can be specified either with spaces or commas:
 
@@ -72,6 +73,7 @@ gateway = Router(
     pd_mode: str | None = None,               # "vllm" or "sglang" for PD mode
     prefill_urls: list[str] | None = None,    # prefill workers (PD mode)
     decode_urls: list[str] | None = None,     # decode workers (PD mode)
+    data_plane_api_keys: list[str] | None = None,  # Bearer tokens for data plane auth
 )
 ```
 

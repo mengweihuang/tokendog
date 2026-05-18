@@ -1,4 +1,4 @@
-use clap::Parser;
+use clap::{ArgAction, Parser};
 
 /// Load-balancing policy selection.
 #[derive(clap::ValueEnum, Debug, Clone, Copy)]
@@ -103,4 +103,8 @@ pub struct Config {
     /// Comma-separated decode worker URLs for PD mode.
     #[arg(long, num_args = 0..)]
     pub decode_urls: Vec<String>,
+
+    /// API keys for data plane access (format: key)
+    #[arg(long = "data-plane-api-keys", action = ArgAction::Append, env = "DATA_PLANE_API_KEYS", value_delimiter = ',', help_heading = "Data Plane Authentication")]
+    pub data_plane_api_keys: Vec<String>,
 }

@@ -58,6 +58,46 @@ fn test_config_single_worker() {
 }
 
 #[test]
+fn test_config_data_plane_api_keys_single() {
+    let config = Config::try_parse_from([
+        "router",
+        "--worker-urls",
+        "http://localhost:8000",
+        "--data-plane-api-keys",
+        "sk-test123",
+    ])
+    .expect("Config should parse with data plane API key");
+    assert_eq!(config.data_plane_api_keys, vec!["sk-test123"]);
+}
+
+#[test]
+fn test_config_data_plane_api_keys_multiple_flags() {
+    let config = Config::try_parse_from([
+        "router",
+        "--worker-urls",
+        "http://localhost:8000",
+        "--data-plane-api-keys",
+        "sk-key1",
+        "--data-plane-api-keys",
+        "sk-key2",
+        "--data-plane-api-keys",
+        "sk-key3",
+    ])
+    .expect("Config should parse with multiple --data-plane-api-keys flags");
+    assert_eq!(
+        config.data_plane_api_keys,
+        vec!["sk-key1", "sk-key2", "sk-key3"]
+    );
+}
+
+#[test]
+fn test_config_data_plane_api_keys_empty_by_default() {
+    let config = Config::try_parse_from(["router", "--worker-urls", "http://localhost:8000"])
+        .expect("Config should parse without data plane API keys");
+    assert!(config.data_plane_api_keys.is_empty());
+}
+
+#[test]
 fn test_config_multiple_workers() {
     let config = Config::try_parse_from([
         "router",
