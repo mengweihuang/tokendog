@@ -21,5 +21,5 @@ echo 'registry = "sparse+https://mirrors.aliyun.com/crates.io-index/"'  >> $HOME
 
 echo '. "$HOME/.cargo/env"' >> ~/.bashrc
 
-# 该脚本执行完后，需要再加载下env，或者重新进入bash
-. "$HOME/.cargo/env"
+# 该脚本执行完后，需要加载下env，或者重新进入bash
+# . "$HOME/.cargo/env"

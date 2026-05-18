@@ -12,6 +12,7 @@ build-router:
 build-router-release:
 	cargo build --release -p router
 
+# python3 -m build crates/router-python --wheel --outdir dist
 build-wheel:
 	cd $(ROUTER_PYTHON) && maturin build --release
 
@@ -21,4 +22,4 @@ test:
 clean:
 	cargo clean -p router
 	cargo clean -p router-python
-	rm -rf ./target/wheels
+	rm -rf target/wheels
