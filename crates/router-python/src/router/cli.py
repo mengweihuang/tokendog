@@ -1,15 +1,14 @@
 """Command-line entry point for the router gateway."""
 
 import argparse
+import secrets
+import sys
 
 from router import Router
 
 
-def main() -> None:
-    """Parse CLI arguments and start the router gateway."""
-    parser = argparse.ArgumentParser(
-        description="LLM gateway for vLLM/SGLang inference engines."
-    )
+def _add_serve_args(parser: argparse.ArgumentParser) -> None:
+    """Add serve subcommand arguments."""
     parser.add_argument(
         "--host",
         default="0.0.0.0",
@@ -78,10 +77,9 @@ def main() -> None:
         help="API key(s) for data plane Bearer token authentication. Accepts space-separated and/or comma-separated values.",
     )
 
-    args = parser.parse_args()
 
-    # Support both space-separated and comma-separated worker URLs,
-    # matching the behavior of the Rust CLI binary.
+def _cmd_serve(args: argparse.Namespace) -> None:
+    """Start the router gateway."""
     worker_urls: list[str] = []
     for u in args.worker_urls:
         worker_urls.extend(u.split(","))
@@ -111,6 +109,38 @@ def main() -> None:
         data_plane_api_keys=data_plane_api_keys if data_plane_api_keys else None,
     )
     gateway.serve()
+
+
+def _cmd_genkey(args: argparse.Namespace) -> None:
+    """Generate and print an API key."""
+    key = "sk-" + secrets.token_hex(16)
+    print(key)
+
+
+def main(default_command: str | None = None) -> None:
+    """Parse CLI arguments and dispatch to the appropriate subcommand."""
+    parser = argparse.ArgumentParser(
+        description="LLM gateway for vLLM/SGLang inference engines."
+    )
+    subparsers = parser.add_subparsers(dest="command", title="commands")
+    subparsers.required = False
+
+    serve_parser = subparsers.add_parser("serve", help="Start the gateway server")
+    _add_serve_args(serve_parser)
+
+    subparsers.add_parser("genkey", help="Generate an API key (sk- prefix, 32 hex chars)")
+
+    args = parser.parse_args()
+
+    command = args.command or default_command
+
+    if command == "genkey":
+        _cmd_genkey(args)
+    elif command == "serve":
+        _cmd_serve(args)
+    else:
+        parser.print_help()
+        sys.exit(1)
 
 
 if __name__ == "__main__":
