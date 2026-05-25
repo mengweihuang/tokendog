@@ -7,8 +7,8 @@ import sys
 from router import Router
 
 
-def _add_serve_args(parser: argparse.ArgumentParser) -> None:
-    """Add serve subcommand arguments."""
+def _add_args(parser: argparse.ArgumentParser) -> None:
+    """Add top-level arguments."""
     parser.add_argument(
         "--host",
         default="0.0.0.0",
@@ -23,7 +23,7 @@ def _add_serve_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--worker-urls",
         nargs="+",
-        required=True,
+        default=[],
         help="Worker URL(s). Accepts space-separated and/or comma-separated values.",
     )
     parser.add_argument(
@@ -76,10 +76,19 @@ def _add_serve_args(parser: argparse.ArgumentParser) -> None:
         default=[],
         help="API key(s) for data plane Bearer token authentication. Accepts space-separated and/or comma-separated values.",
     )
+    parser.add_argument(
+        "--genkey",
+        action="store_true",
+        help="Generate an API key (sk- prefix, 32 hex chars) and exit.",
+    )
 
 
 def _cmd_serve(args: argparse.Namespace) -> None:
     """Start the router gateway."""
+    if not args.worker_urls:
+        print("error: the following arguments are required: --worker-urls", file=sys.stderr)
+        sys.exit(2)
+
     worker_urls: list[str] = []
     for u in args.worker_urls:
         worker_urls.extend(u.split(","))
@@ -117,30 +126,19 @@ def _cmd_genkey(args: argparse.Namespace) -> None:
     print(key)
 
 
-def main(default_command: str | None = None) -> None:
-    """Parse CLI arguments and dispatch to the appropriate subcommand."""
+def main() -> None:
+    """Parse CLI arguments and start the gateway, or generate a key."""
     parser = argparse.ArgumentParser(
         description="LLM gateway for vLLM/SGLang inference engines."
     )
-    subparsers = parser.add_subparsers(dest="command", title="commands")
-    subparsers.required = False
-
-    serve_parser = subparsers.add_parser("serve", help="Start the gateway server")
-    _add_serve_args(serve_parser)
-
-    subparsers.add_parser("genkey", help="Generate an API key (sk- prefix, 32 hex chars)")
+    _add_args(parser)
 
     args = parser.parse_args()
 
-    command = args.command or default_command
-
-    if command == "genkey":
+    if args.genkey:
         _cmd_genkey(args)
-    elif command == "serve":
-        _cmd_serve(args)
     else:
-        parser.print_help()
-        sys.exit(1)
+        _cmd_serve(args)
 
 
 if __name__ == "__main__":

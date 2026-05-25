@@ -247,6 +247,10 @@ impl Router {
                 ))
             };
 
+            let rt = tokio::runtime::Runtime::new().map_err(|e| {
+                format!("Failed to create Tokio runtime: {}", e)
+            })?;
+
             // Spawn background health-check task when enabled.
             if health_check {
                 let interval = Duration::from_secs(health_check_interval_secs);
@@ -255,7 +259,7 @@ impl Router {
                 let health_prefill_workers = state.prefill_workers().to_vec();
                 let health_decode_workers = state.decode_workers().to_vec();
 
-                tokio::spawn(async move {
+                rt.spawn(async move {
                     tracing::info!(
                         interval_secs = interval.as_secs(),
                         "Health check task started",
@@ -275,10 +279,6 @@ impl Router {
 
             let auth_config = AuthConfig::new(Some(data_plane_api_keys));
             let app = build_router(state, auth_config);
-
-            let rt = tokio::runtime::Runtime::new().map_err(|e| {
-                format!("Failed to create Tokio runtime: {}", e)
-            })?;
 
             rt.block_on(async move {
                 tracing::info!("Listening on {}", addr);

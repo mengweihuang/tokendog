@@ -10,7 +10,6 @@
       "Bash(cargo --version)",
       "Bash(cargo search *)",
       "Bash(rtk cargo *)",
-      "Skill(code-review-skill)",
       "Bash(python -m maturin --version)",
       "Bash(rtk pip *)",
       "Bash(python -m maturin build --release)",
