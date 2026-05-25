@@ -1,13 +1,16 @@
 //! Binary entry point for the router gateway.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use clap::Parser;
 use tokio::net::TcpListener;
 use tracing_subscriber::EnvFilter;
 
 use router::{
-    auth::AuthConfig, build_router, config::{self, Config},
+    auth::AuthConfig,
+    build_router,
+    config::{self, Config},
     policies::{
         least_loaded::LeastLoaded, load_cache_aware::LoadCacheAware, power_of_two::PowerOfTwo,
         prefix_affinity::PrefixAffinity, random::Random, round_robin::RoundRobin,
@@ -15,6 +18,7 @@ use router::{
     },
     shutdown_signal,
     state::AppState,
+    worker::{self, Worker},
 };
 
 /// Helper: construct a `LoadBalancer` implementation from the chosen policy
@@ -58,6 +62,8 @@ async fn main() {
         decode_urls = ?config.decode_urls,
         pd_mode = ?config.pd_mode,
         policy = ?config.policy,
+        health_check = config.health_check,
+        health_check_interval_secs = config.health_check_interval_secs,
         data_plane_auth = num_api_keys > 0,
         "Starting router",
     );
@@ -78,8 +84,8 @@ async fn main() {
 
         Arc::new(AppState::new_pd(
             pd_mode,
-            config.prefill_urls,
-            config.decode_urls,
+            Worker::from_urls(&config.prefill_urls),
+            Worker::from_urls(&config.decode_urls),
             config.request_timeout_secs,
             make_policy(config.policy, n_prefill),
             make_policy(config.policy, n_decode),
@@ -87,11 +93,38 @@ async fn main() {
     } else {
         let n = config.worker_urls.len();
         Arc::new(AppState::new(
-            config.worker_urls,
+            Worker::from_urls(&config.worker_urls),
             config.request_timeout_secs,
             make_policy(config.policy, n),
         ))
     };
+
+    // Spawn background health-check task when enabled.
+    if config.health_check {
+        let interval = Duration::from_secs(config.health_check_interval_secs);
+        let health_client = state.client.clone();
+        let health_workers = state.workers.clone();
+        let health_prefill_workers = state.prefill_workers().to_vec();
+        let health_decode_workers = state.decode_workers().to_vec();
+
+        tokio::spawn(async move {
+            tracing::info!(
+                interval_secs = interval.as_secs(),
+                "Health check task started",
+            );
+            loop {
+                tokio::time::sleep(interval).await;
+                worker::run_health_checks(&health_client, &health_workers).await;
+                if !health_prefill_workers.is_empty() {
+                    worker::run_health_checks(&health_client, &health_prefill_workers).await;
+                }
+                if !health_decode_workers.is_empty() {
+                    worker::run_health_checks(&health_client, &health_decode_workers).await;
+                }
+            }
+        });
+    }
+
     let app = build_router(state, auth_config);
     let listener = TcpListener::bind(&listen_addr)
         .await

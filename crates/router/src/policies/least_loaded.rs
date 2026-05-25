@@ -1,8 +1,8 @@
 //! Least-loaded worker selection policy with active-request tracking.
 
-use std::sync::atomic::{AtomicUsize, Ordering};
-use rand::Rng;
 use super::LoadBalancer;
+use rand::Rng;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// A least-loaded load balancer.
 ///

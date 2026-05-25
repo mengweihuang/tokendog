@@ -6,13 +6,19 @@ use router::auth::AuthConfig;
 use router::build_router;
 use router::policies::round_robin::RoundRobin;
 use router::state::AppState;
+use router::worker::Worker;
 use tower::util::ServiceExt;
+
+fn make_workers(urls: &[&str]) -> Vec<Arc<Worker>> {
+    let strings: Vec<String> = urls.iter().map(|u| u.to_string()).collect();
+    Worker::from_urls(&strings)
+}
 
 #[tokio::test]
 async fn test_proxy_handler_backend_unreachable() {
     let state = Arc::new(AppState::new(
         // Use a port that is very unlikely to have a listening service.
-        vec!["http://127.0.0.1:1".to_string()],
+        make_workers(&["http://127.0.0.1:1"]),
         3,
         Box::new(RoundRobin::new()),
     ));
@@ -42,7 +48,7 @@ async fn test_proxy_handler_backend_unreachable() {
 #[tokio::test]
 async fn test_proxy_handler_invalid_worker_url() {
     let state = Arc::new(AppState::new(
-        vec!["http://[::1]:8000".to_string()],
+        make_workers(&["http://[::1]:8000"]),
         3,
         Box::new(RoundRobin::new()),
     ));
