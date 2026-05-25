@@ -2,4 +2,4 @@
 
 from router.cli import main
 
-main()
+main(default_command="serve")
