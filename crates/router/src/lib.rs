@@ -7,6 +7,7 @@ pub mod policies;
 pub mod proxy;
 pub mod routes;
 pub mod state;
+pub mod worker;
 
 use std::future;
 use std::sync::Arc;
@@ -25,7 +26,10 @@ pub fn build_router(state: Arc<AppState>, auth_config: AuthConfig) -> Router {
     Router::new()
         .route("/health", get(health::health_handler))
         .fallback(routes::pd_proxy_handler)
-        .layer(middleware::from_fn_with_state(auth_config, auth::auth_middleware))
+        .layer(middleware::from_fn_with_state(
+            auth_config,
+            auth::auth_middleware,
+        ))
         .layer(TraceLayer::new_for_http())
         .with_state(state)
 }

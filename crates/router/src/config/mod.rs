@@ -107,4 +107,12 @@ pub struct Config {
     /// API keys for data plane access (format: key)
     #[arg(long = "data-plane-api-keys", action = ArgAction::Append, env = "DATA_PLANE_API_KEYS", value_delimiter = ',', help_heading = "Data Plane Authentication")]
     pub data_plane_api_keys: Vec<String>,
+
+    /// Enable periodic health checking of worker nodes.
+    #[arg(long, env = "HEALTH_CHECK", default_value = "true", action = ArgAction::Set)]
+    pub health_check: bool,
+
+    /// Interval in seconds between health check rounds.
+    #[arg(long, env = "HEALTH_CHECK_INTERVAL", default_value = "60")]
+    pub health_check_interval_secs: u64,
 }

@@ -26,6 +26,10 @@ pub enum ProxyError {
     /// Failed to construct the outgoing HTTP response.
     #[error("Failed to build response: {0}")]
     ResponseBuild(#[from] axum::http::Error),
+
+    /// No healthy workers are available to serve the request.
+    #[error("No healthy workers available")]
+    NoHealthyWorkers,
 }
 
 impl IntoResponse for ProxyError {
@@ -62,6 +66,13 @@ impl IntoResponse for ProxyError {
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "internal error".to_string(),
+                )
+            }
+            Self::NoHealthyWorkers => {
+                tracing::warn!("No healthy workers available");
+                (
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "no healthy workers available".to_string(),
                 )
             }
         };

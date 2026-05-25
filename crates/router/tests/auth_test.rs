@@ -7,12 +7,13 @@ use router::auth::AuthConfig;
 use router::build_router;
 use router::policies::round_robin::RoundRobin;
 use router::state::AppState;
+use router::worker::Worker;
 use tower::util::ServiceExt;
 
 /// Helper: create a minimal router app for testing.
 fn test_app(auth_config: AuthConfig) -> axum::Router {
     let state = Arc::new(AppState::new(
-        vec!["http://localhost:8000".to_string()],
+        vec![Arc::new(Worker::new("http://localhost:8000".to_string()))],
         30,
         Box::new(RoundRobin::new()),
     ));
@@ -170,8 +171,12 @@ async fn test_auth_multiple_keys_all_work() {
             .await
             .expect("router should handle request");
 
-        assert_ne!(response.status(), StatusCode::UNAUTHORIZED,
-            "key '{}' should be accepted", key);
+        assert_ne!(
+            response.status(),
+            StatusCode::UNAUTHORIZED,
+            "key '{}' should be accepted",
+            key
+        );
     }
 }
 

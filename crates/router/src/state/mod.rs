@@ -2,15 +2,18 @@
 
 pub mod client;
 
+use std::sync::Arc;
+
 use crate::config;
 use crate::policies::{LoadBalancer, RequestContext};
+use crate::worker::{self, Worker};
 
 use self::client::build_client;
 
-/// Shared application state holding worker URL list, HTTP client, and load balancer.
+/// Shared application state holding worker list, HTTP client, and load balancer.
 pub struct AppState {
-    /// List of worker URLs.
-    pub worker_urls: Vec<String>,
+    /// Worker pool (regular mode).
+    pub workers: Vec<Arc<Worker>>,
     /// Reusable HTTP client with connection pooling and timeout.
     pub client: reqwest::Client,
     /// Worker selection policy.
@@ -19,10 +22,10 @@ pub struct AppState {
     // ── PD separation fields (only populated in PD mode) ──
     /// Which PD mode is active, if any.
     pd_mode: Option<config::PdMode>,
-    /// Prefill-dedicated worker URLs.
-    prefill_urls: Vec<String>,
-    /// Decode-dedicated worker URLs.
-    decode_urls: Vec<String>,
+    /// Prefill-dedicated workers.
+    prefill_workers: Vec<Arc<Worker>>,
+    /// Decode-dedicated workers.
+    decode_workers: Vec<Arc<Worker>>,
     /// Worker selection policy for the prefill pool.
     prefill_policy: Option<Box<dyn LoadBalancer>>,
     /// Worker selection policy for the decode pool.
@@ -30,28 +33,28 @@ pub struct AppState {
 }
 
 impl AppState {
-    /// Create a new `AppState` with the given worker URLs, request timeout, and policy.
+    /// Create a new `AppState` with the given workers, request timeout, and policy.
     ///
     /// # Panics
     ///
-    /// Panics if `worker_urls` is empty.
+    /// Panics if `workers` is empty.
     pub fn new(
-        worker_urls: Vec<String>,
+        workers: Vec<Arc<Worker>>,
         timeout_secs: u64,
         balancer: Box<dyn LoadBalancer>,
     ) -> Self {
         assert!(
-            !worker_urls.is_empty(),
+            !workers.is_empty(),
             "AppState requires at least one worker URL"
         );
 
         Self {
-            worker_urls,
+            workers,
             client: build_client(timeout_secs),
             balancer,
             pd_mode: None,
-            prefill_urls: Vec::new(),
-            decode_urls: Vec::new(),
+            prefill_workers: Vec::new(),
+            decode_workers: Vec::new(),
             prefill_policy: None,
             decode_policy: None,
         }
@@ -59,27 +62,27 @@ impl AppState {
 
     /// Create PD-mode `AppState` with separate prefill and decode worker pools.
     ///
-    /// The fallback `worker_urls` / `balancer` are set to the decode pool so
+    /// The fallback `workers` / `balancer` are set to the decode pool so
     /// non-inference requests forwarded by the regular proxy handler target
     /// decode workers.
     ///
     /// # Panics
     ///
-    /// Panics if either `prefill_urls` or `decode_urls` is empty.
+    /// Panics if either `prefill_workers` or `decode_workers` is empty.
     pub fn new_pd(
         pd_mode: config::PdMode,
-        prefill_urls: Vec<String>,
-        decode_urls: Vec<String>,
+        prefill_workers: Vec<Arc<Worker>>,
+        decode_workers: Vec<Arc<Worker>>,
         timeout_secs: u64,
         prefill_policy: Box<dyn LoadBalancer>,
         decode_policy: Box<dyn LoadBalancer>,
     ) -> Self {
         assert!(
-            !prefill_urls.is_empty(),
+            !prefill_workers.is_empty(),
             "AppState::new_pd requires at least one prefill URL"
         );
         assert!(
-            !decode_urls.is_empty(),
+            !decode_workers.is_empty(),
             "AppState::new_pd requires at least one decode URL"
         );
 
@@ -90,12 +93,12 @@ impl AppState {
         let fallback: Box<dyn LoadBalancer> = Box::new(RoundRobin::new());
 
         Self {
-            worker_urls: decode_urls.clone(),
+            workers: decode_workers.clone(),
             client: build_client(timeout_secs),
             balancer: fallback,
             pd_mode: Some(pd_mode),
-            prefill_urls,
-            decode_urls,
+            prefill_workers,
+            decode_workers,
             prefill_policy: Some(prefill_policy),
             decode_policy: Some(decode_policy),
         }
@@ -111,20 +114,46 @@ impl AppState {
         self.pd_mode
     }
 
-    /// Select a prefill worker and notify the policy that a request started.
-    pub fn next_prefill_worker(&self, ctx: &RequestContext) -> Option<(usize, &str)> {
-        let policy = self.prefill_policy.as_ref()?;
-        let idx = policy.select_with_context(&self.prefill_urls, ctx);
-        policy.on_request_start(idx);
-        Some((idx, &self.prefill_urls[idx]))
+    /// Return a reference to the prefill worker list (for health checks).
+    pub fn prefill_workers(&self) -> &[Arc<Worker>] {
+        &self.prefill_workers
     }
 
-    /// Select a decode worker and notify the policy that a request started.
+    /// Return a reference to the decode worker list (for health checks).
+    pub fn decode_workers(&self) -> &[Arc<Worker>] {
+        &self.decode_workers
+    }
+
+    /// Select a healthy prefill worker and notify the policy that a request started.
+    ///
+    /// Returns `None` if no healthy prefill workers are available.
+    pub fn next_prefill_worker(&self, ctx: &RequestContext) -> Option<(usize, &str)> {
+        let policy = self.prefill_policy.as_ref()?;
+        let healthy = worker::healthy_worker_urls(&self.prefill_workers);
+        if healthy.is_empty() {
+            return None;
+        }
+        let urls: Vec<String> = healthy.iter().map(|(_, url)| url.to_string()).collect();
+        let filtered_idx = policy.select_with_context(&urls, ctx);
+        let (original_idx, worker_url) = healthy[filtered_idx];
+        policy.on_request_start(original_idx);
+        Some((original_idx, worker_url))
+    }
+
+    /// Select a healthy decode worker and notify the policy that a request started.
+    ///
+    /// Returns `None` if no healthy decode workers are available.
     pub fn next_decode_worker(&self, ctx: &RequestContext) -> Option<(usize, &str)> {
         let policy = self.decode_policy.as_ref()?;
-        let idx = policy.select_with_context(&self.decode_urls, ctx);
-        policy.on_request_start(idx);
-        Some((idx, &self.decode_urls[idx]))
+        let healthy = worker::healthy_worker_urls(&self.decode_workers);
+        if healthy.is_empty() {
+            return None;
+        }
+        let urls: Vec<String> = healthy.iter().map(|(_, url)| url.to_string()).collect();
+        let filtered_idx = policy.select_with_context(&urls, ctx);
+        let (original_idx, worker_url) = healthy[filtered_idx];
+        policy.on_request_start(original_idx);
+        Some((original_idx, worker_url))
     }
 
     /// Notify the prefill policy that the request to `worker_idx` completed.
@@ -155,23 +184,37 @@ impl AppState {
         }
     }
 
-    /// Return the index and URL of the next worker using the configured policy.
+    /// Return the index and URL of the next healthy worker using the configured policy.
     ///
     /// Also notifies the balancer that a request has started on this worker.
-    /// Prefer [`next_worker_with_context`](Self::next_worker_with_context) when
-    /// request context is available so cache-aware policies can use it.
-    pub fn next_worker(&self) -> (usize, &str) {
-        let idx = self.balancer.select(&self.worker_urls);
-        self.balancer.on_request_start(idx);
-        (idx, &self.worker_urls[idx])
+    ///
+    /// Returns `None` if no healthy workers are available.
+    pub fn next_worker(&self) -> Option<(usize, &str)> {
+        let healthy = worker::healthy_worker_urls(&self.workers);
+        if healthy.is_empty() {
+            return None;
+        }
+        let urls: Vec<String> = healthy.iter().map(|(_, url)| url.to_string()).collect();
+        let filtered_idx = self.balancer.select(&urls);
+        let (original_idx, worker_url) = healthy[filtered_idx];
+        self.balancer.on_request_start(original_idx);
+        Some((original_idx, worker_url))
     }
 
-    /// Return the index and URL of the next worker, using request context for
-    /// cache-aware routing decisions.
-    pub fn next_worker_with_context(&self, ctx: &RequestContext) -> (usize, &str) {
-        let idx = self.balancer.select_with_context(&self.worker_urls, ctx);
-        self.balancer.on_request_start(idx);
-        (idx, &self.worker_urls[idx])
+    /// Return the index and URL of the next healthy worker, using request context
+    /// for cache-aware routing decisions.
+    ///
+    /// Returns `None` if no healthy workers are available.
+    pub fn next_worker_with_context(&self, ctx: &RequestContext) -> Option<(usize, &str)> {
+        let healthy = worker::healthy_worker_urls(&self.workers);
+        if healthy.is_empty() {
+            return None;
+        }
+        let urls: Vec<String> = healthy.iter().map(|(_, url)| url.to_string()).collect();
+        let filtered_idx = self.balancer.select_with_context(&urls, ctx);
+        let (original_idx, worker_url) = healthy[filtered_idx];
+        self.balancer.on_request_start(original_idx);
+        Some((original_idx, worker_url))
     }
 
     /// Notify the balancer that the request to `worker_idx` has completed.
@@ -185,4 +228,3 @@ impl AppState {
         self.balancer.record(ctx, worker_idx);
     }
 }
-

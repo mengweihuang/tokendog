@@ -2,6 +2,7 @@
 
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
+use std::time::Duration;
 
 use pyo3::prelude::*;
 use tokio::net::TcpListener;
@@ -17,6 +18,7 @@ use router::policies::{
 };
 use router::shutdown_signal;
 use router::state::AppState;
+use router::worker::{self, Worker};
 
 /// Validates a policy string and returns it normalized.
 fn validate_policy(policy: &str) -> PyResult<String> {
@@ -66,6 +68,8 @@ fn make_policy(policy: &str, n: usize) -> Box<dyn LoadBalancer> {
 ///     prefill_urls: Prefill worker URLs for PD mode.
 ///     decode_urls: Decode worker URLs for PD mode.
 ///     data_plane_api_keys: Optional list of Bearer tokens for data plane auth.
+///     health_check: Enable periodic health checking of worker nodes (default True).
+///     health_check_interval_secs: Interval in seconds between health check rounds (default 60).
 #[pyclass]
 struct Router {
     #[pyo3(get)]
@@ -88,12 +92,16 @@ struct Router {
     decode_urls: Vec<String>,
     #[pyo3(get)]
     data_plane_api_keys: Vec<String>,
+    #[pyo3(get)]
+    health_check: bool,
+    #[pyo3(get)]
+    health_check_interval_secs: u64,
 }
 
 #[pymethods]
 impl Router {
     #[new]
-    #[pyo3(signature = (worker_urls, host="0.0.0.0", port=30000, request_timeout_secs=300, log_level="info", policy="least-loaded", pd_mode=None, prefill_urls=None, decode_urls=None, data_plane_api_keys=None))]
+    #[pyo3(signature = (worker_urls, host="0.0.0.0", port=30000, request_timeout_secs=300, log_level="info", policy="least-loaded", pd_mode=None, prefill_urls=None, decode_urls=None, data_plane_api_keys=None, health_check=true, health_check_interval_secs=60))]
     #[allow(clippy::too_many_arguments)]
     fn new(
         worker_urls: Vec<String>,
@@ -106,6 +114,8 @@ impl Router {
         prefill_urls: Option<Vec<String>>,
         decode_urls: Option<Vec<String>>,
         data_plane_api_keys: Option<Vec<String>>,
+        health_check: bool,
+        health_check_interval_secs: u64,
     ) -> PyResult<Self> {
         let policy = validate_policy(policy)?;
         let pd_mode = match pd_mode {
@@ -131,6 +141,8 @@ impl Router {
             prefill_urls: prefill_urls.unwrap_or_default(),
             decode_urls: decode_urls.unwrap_or_default(),
             data_plane_api_keys: data_plane_api_keys.unwrap_or_default(),
+            health_check,
+            health_check_interval_secs,
         })
     }
 
@@ -167,6 +179,8 @@ impl Router {
         let prefill_urls = self.prefill_urls.clone();
         let decode_urls = self.decode_urls.clone();
         let data_plane_api_keys = self.data_plane_api_keys.clone();
+        let health_check = self.health_check;
+        let health_check_interval_secs = self.health_check_interval_secs;
 
         // Release the GIL before blocking on the async server loop.
         let result: Result<(), String> = py.allow_threads(move || {
@@ -191,6 +205,8 @@ impl Router {
                 decode_urls = ?decode_urls,
                 pd_mode = ?pd_mode,
                 policy = %policy,
+                health_check = health_check,
+                health_check_interval_secs = health_check_interval_secs,
                 data_plane_auth = num_api_keys > 0,
                 "Starting router (Python bindings)",
             );
@@ -216,8 +232,8 @@ impl Router {
 
                 Arc::new(AppState::new_pd(
                     pd_mode_enum,
-                    prefill_urls,
-                    decode_urls,
+                    Worker::from_urls(&prefill_urls),
+                    Worker::from_urls(&decode_urls),
                     timeout_secs,
                     make_policy(&policy, n_prefill),
                     make_policy(&policy, n_decode),
@@ -225,11 +241,37 @@ impl Router {
             } else {
                 let n = worker_urls.len();
                 Arc::new(AppState::new(
-                    worker_urls,
+                    Worker::from_urls(&worker_urls),
                     timeout_secs,
                     make_policy(&policy, n),
                 ))
             };
+
+            // Spawn background health-check task when enabled.
+            if health_check {
+                let interval = Duration::from_secs(health_check_interval_secs);
+                let health_client = state.client.clone();
+                let health_workers = state.workers.clone();
+                let health_prefill_workers = state.prefill_workers().to_vec();
+                let health_decode_workers = state.decode_workers().to_vec();
+
+                tokio::spawn(async move {
+                    tracing::info!(
+                        interval_secs = interval.as_secs(),
+                        "Health check task started",
+                    );
+                    loop {
+                        tokio::time::sleep(interval).await;
+                        worker::run_health_checks(&health_client, &health_workers).await;
+                        if !health_prefill_workers.is_empty() {
+                            worker::run_health_checks(&health_client, &health_prefill_workers).await;
+                        }
+                        if !health_decode_workers.is_empty() {
+                            worker::run_health_checks(&health_client, &health_decode_workers).await;
+                        }
+                    }
+                });
+            }
 
             let auth_config = AuthConfig::new(Some(data_plane_api_keys));
             let app = build_router(state, auth_config);

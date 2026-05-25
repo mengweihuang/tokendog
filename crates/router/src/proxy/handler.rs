@@ -61,7 +61,9 @@ pub async fn proxy_handler(
     // Remove the Host header so reqwest sets it from the target URL.
     parts.headers.remove(http::header::HOST);
 
-    let (worker_idx, worker_url) = state.next_worker_with_context(&ctx);
+    let (worker_idx, worker_url) = state
+        .next_worker_with_context(&ctx)
+        .ok_or(ProxyError::NoHealthyWorkers)?;
     let _active = ActiveRequest {
         state: &state,
         idx: worker_idx,
