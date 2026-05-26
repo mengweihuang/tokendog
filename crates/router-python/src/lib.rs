@@ -8,8 +8,8 @@ use pyo3::prelude::*;
 use tokio::net::TcpListener;
 use tracing_subscriber::EnvFilter;
 
-use router::auth::AuthConfig;
 use router::build_router;
+use router::config::auth::AuthConfig;
 use router::config::PdMode;
 use router::policies::{
     least_loaded::LeastLoaded, load_cache_aware::LoadCacheAware, power_of_two::PowerOfTwo,
@@ -96,12 +96,14 @@ struct Router {
     health_check: bool,
     #[pyo3(get)]
     health_check_interval_secs: u64,
+    #[pyo3(get)]
+    log_file: Option<String>,
 }
 
 #[pymethods]
 impl Router {
     #[new]
-    #[pyo3(signature = (worker_urls, host="0.0.0.0", port=30000, request_timeout_secs=300, log_level="info", policy="least-loaded", pd_mode=None, prefill_urls=None, decode_urls=None, data_plane_api_keys=None, health_check=true, health_check_interval_secs=60))]
+    #[pyo3(signature = (worker_urls, host="0.0.0.0", port=30000, request_timeout_secs=300, log_level="info", policy="least-loaded", pd_mode=None, prefill_urls=None, decode_urls=None, data_plane_api_keys=None, health_check=true, health_check_interval_secs=60, log_file=None))]
     #[allow(clippy::too_many_arguments)]
     fn new(
         worker_urls: Vec<String>,
@@ -116,6 +118,7 @@ impl Router {
         data_plane_api_keys: Option<Vec<String>>,
         health_check: bool,
         health_check_interval_secs: u64,
+        log_file: Option<String>,
     ) -> PyResult<Self> {
         let policy = validate_policy(policy)?;
         let pd_mode = match pd_mode {
@@ -143,6 +146,7 @@ impl Router {
             data_plane_api_keys: data_plane_api_keys.unwrap_or_default(),
             health_check,
             health_check_interval_secs,
+            log_file,
         })
     }
 
@@ -183,11 +187,15 @@ impl Router {
         let health_check_interval_secs = self.health_check_interval_secs;
 
         // Release the GIL before blocking on the async server loop.
+        let log_file_owned = self.log_file.clone();
         let result: Result<(), String> = py.allow_threads(move || {
-            match tracing_subscriber::fmt()
-                .with_env_filter(EnvFilter::new(level))
-                .try_init()
-            {
+            let init_result =
+                router::config::logging::setup_tracing(
+                    EnvFilter::new(level),
+                    log_file_owned.as_deref(),
+                );
+
+            match init_result {
                 Ok(()) => {}
                 Err(_) => {
                     eprintln!(

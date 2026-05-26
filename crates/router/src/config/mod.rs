@@ -1,3 +1,6 @@
+pub mod auth;
+pub mod logging;
+
 use clap::{ArgAction, Parser};
 
 /// Load-balancing policy selection.
@@ -115,4 +118,8 @@ pub struct Config {
     /// Interval in seconds between health check rounds.
     #[arg(long, env = "HEALTH_CHECK_INTERVAL", default_value = "60")]
     pub health_check_interval_secs: u64,
+
+    /// Optional file path for JSON log output. If not set, logs only go to stderr.
+    #[arg(long, env = "LOG_FILE")]
+    pub log_file: Option<String>,
 }

@@ -1,5 +1,7 @@
 //! Worker node abstraction with health status tracking.
 
+pub mod health;
+
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -68,18 +70,18 @@ pub async fn check_worker_health(client: &reqwest::Client, url: &str) -> bool {
 }
 
 /// Run one round of health checks against a set of workers, updating each
-/// worker's health flag. Logs transitions at info level.
+/// worker's health flag. Logs every check result; the `changed` field
+/// indicates whether the health status transitioned.
 pub async fn run_health_checks(client: &reqwest::Client, workers: &[Arc<Worker>]) {
     for worker in workers {
         let was_healthy = worker.is_healthy();
         let healthy = check_worker_health(client, &worker.url).await;
         worker.set_healthy(healthy);
-        if healthy != was_healthy {
-            tracing::info!(
-                url = %worker.url,
-                healthy = healthy,
-                "Worker health status changed",
-            );
-        }
+        tracing::info!(
+            url = %worker.url,
+            healthy = healthy,
+            changed = healthy != was_healthy,
+            "Health check",
+        );
     }
 }

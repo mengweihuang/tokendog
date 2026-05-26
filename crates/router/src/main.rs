@@ -8,9 +8,8 @@ use tokio::net::TcpListener;
 use tracing_subscriber::EnvFilter;
 
 use router::{
-    auth::AuthConfig,
     build_router,
-    config::{self, Config},
+    config::{self, auth::AuthConfig, Config},
     policies::{
         least_loaded::LeastLoaded, load_cache_aware::LoadCacheAware, power_of_two::PowerOfTwo,
         prefix_affinity::PrefixAffinity, random::Random, round_robin::RoundRobin,
@@ -47,7 +46,9 @@ async fn main() {
     let env_filter = EnvFilter::builder()
         .with_default_directive(config.log_level.to_tracing_level().into())
         .from_env_lossy();
-    tracing_subscriber::fmt().with_env_filter(env_filter).init();
+
+    router::config::logging::setup_tracing(env_filter, config.log_file.as_deref())
+        .expect("Failed to initialize tracing subscriber");
 
     let listen_addr = format!("{}:{}", config.host, config.port);
 

@@ -1,8 +1,6 @@
 //! router — LLM gateway for vLLM/SGLang inference engines.
 
-pub mod auth;
 pub mod config;
-pub mod health;
 pub mod policies;
 pub mod proxy;
 pub mod routes;
@@ -15,7 +13,7 @@ use std::sync::Arc;
 use axum::{middleware, routing::get, Router};
 use tower_http::trace::TraceLayer;
 
-use crate::{auth::AuthConfig, state::AppState};
+use crate::{config::auth::AuthConfig, state::AppState};
 
 /// Build the axum router with all routes and middleware.
 ///
@@ -24,11 +22,11 @@ use crate::{auth::AuthConfig, state::AppState};
 ///   by Bearer token authentication when `data_plane_api_keys` are configured.
 pub fn build_router(state: Arc<AppState>, auth_config: AuthConfig) -> Router {
     Router::new()
-        .route("/health", get(health::health_handler))
+        .route("/health", get(worker::health::health_handler))
         .fallback(routes::pd_proxy_handler)
         .layer(middleware::from_fn_with_state(
             auth_config,
-            auth::auth_middleware,
+            config::auth::auth_middleware,
         ))
         .layer(TraceLayer::new_for_http())
         .with_state(state)
