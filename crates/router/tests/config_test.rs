@@ -17,6 +17,7 @@ fn test_config_defaults() {
     assert_eq!(config.port, 30000);
     assert_eq!(config.worker_urls, vec!["http://localhost:8000"]);
     assert_eq!(config.request_timeout_secs, 300);
+    assert!(config.log_file.is_none());
 }
 
 #[test]
@@ -95,6 +96,19 @@ fn test_config_data_plane_api_keys_empty_by_default() {
     let config = Config::try_parse_from(["router", "--worker-urls", "http://localhost:8000"])
         .expect("Config should parse without data plane API keys");
     assert!(config.data_plane_api_keys.is_empty());
+}
+
+#[test]
+fn test_config_log_file_env() {
+    let config = Config::try_parse_from([
+        "router",
+        "--worker-urls",
+        "http://localhost:8000",
+        "--log-file",
+        "/var/log/router.json",
+    ])
+    .expect("Config should parse with log-file");
+    assert_eq!(config.log_file, Some("/var/log/router.json".to_string()));
 }
 
 #[test]
