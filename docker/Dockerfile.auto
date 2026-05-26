@@ -20,7 +20,7 @@ RUN ln -s /usr/bin/python3 /usr/bin/python
 RUN mkdir -p /opt/venv && \
     python3 -m venv /opt/venv && \
     . /opt/venv/bin/activate && \
-    pip install --upgrade pip build wheel maturin patchelf
+    pip install --upgrade pip build wheel maturin patchelf pre-commit ruff
 
 ENV VIRTUAL_ENV=/opt/venv
 ENV PATH="${VIRTUAL_ENV}/bin:${PATH}"
