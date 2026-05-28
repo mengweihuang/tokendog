@@ -57,3 +57,4 @@ output/
 
 # Agent
 **/settings.local.json
+.codegraph
