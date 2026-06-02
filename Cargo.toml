@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/router", "crates/router-python"]
+members = ["crates/router", "python/router-py"]
 
 [workspace.package]
 version = "0.1.0"

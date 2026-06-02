@@ -234,7 +234,7 @@ impl LoadBalancer for Weighted {
 }
 ```
 
-Then register it in `main.rs`, `router-python/src/lib.rs`, and `router-python/src/router/cli.py`.
+Then register it in `main.rs`, `python/router-py/src/lib.rs`, and `python/router-py/src/router/cli.py`.
 
 ## SSE Streaming
 

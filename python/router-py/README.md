@@ -7,7 +7,7 @@ Python wheel for the router LLM gateway, built with [PyO3](https://pyo3.rs/) and
 ### From wheel
 
 ```bash
-cd crates/router-python
+cd python/router-py
 maturin build --release
 pip install ../target/wheels/router-*.whl
 ```
@@ -15,7 +15,7 @@ pip install ../target/wheels/router-*.whl
 ### Development install
 
 ```bash
-cd crates/router-python
+cd python/router-py
 maturin develop
 ```
 

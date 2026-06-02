@@ -9,6 +9,13 @@
 * Don't install pip packages outside the local Python venv if one exists.
 * Refer to the Makefile and use make to build (e.g., `make build`).
 
+## Code standards
+
+* Add doc comments to public APIs and complex logic.
+* Never hard-code secrets; use environment variables.
+* Handle business exceptions gracefully; propagate unexpected errors globally.
+* Keep lines under 200 characters.
+
 ## Code changes
 
 * Add tests and update docs for the changed code.
