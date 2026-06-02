@@ -29,8 +29,8 @@ Return a `usize` index into the `workers` slice — callers pass it directly to
 | 2 | `crates/router/src/policies/mod.rs` | Add `pub mod <name>;` |
 | 3 | `crates/router/src/config/mod.rs` | Add variant to `Policy` enum |
 | 4 | `crates/router/src/main.rs` | Add match arm in policy dispatch |
-| 5 | `crates/router-python/src/lib.rs` | Add match arm in `serve()` |
-| 6 | `crates/router-python/src/router/cli.py` | Add choice to `--policy` argparse |
+| 5 | `python/router-py/src/lib.rs` | Add match arm in `serve()` |
+| 6 | `python/router-py/src/router/cli.py` | Add choice to `--policy` argparse |
 
 ## Steps
 

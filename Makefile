@@ -1,4 +1,4 @@
-ROUTER_PYTHON := crates/router-python
+ROUTER_PYTHON := python/router-py
 
 .PHONY: all build build-router build-router-release build-wheel test clean
 
@@ -12,7 +12,7 @@ build-router:
 build-router-release:
 	cargo build --release -p router
 
-# python3 -m build crates/router-python --wheel --outdir dist
+# python3 -m build python/router-py --wheel --outdir dist
 build-wheel:
 	cd $(ROUTER_PYTHON) && maturin build --release
 
@@ -21,5 +21,5 @@ test:
 
 clean:
 	cargo clean -p router
-	cargo clean -p router-python
+	cargo clean -p router-py
 	rm -rf target/wheels

@@ -7,7 +7,7 @@ LLM gateway for [vLLM](https://github.com/vllm-project/vllm) / [SGLang](https://
 | Package | Language | Description |
 |---------|----------|-------------|
 | [router](crates/router/) | Rust | HTTP gateway binary + library crate |
-| [router python](crates/router-python/) | Python | PyO3 bindings, installable as a wheel |
+| [router python](python/router-py/) | Python | PyO3 bindings, installable as a wheel |
 
 ## Quick Start
 
@@ -24,7 +24,7 @@ cargo run -- \
 ### Python wheel
 
 ```bash
-cd crates/router-python
+cd python/router-py
 maturin build --release
 pip install ../target/wheels/router-*.whl
 ```
@@ -116,7 +116,7 @@ cargo test
 cargo clippy --all-targets
 
 # Python bindings
-cd crates/router-python
+cd python/router-py
 maturin develop
 python -c "from router import Router; print(Router(worker_urls=['http://localhost:8000']))"
 ```
