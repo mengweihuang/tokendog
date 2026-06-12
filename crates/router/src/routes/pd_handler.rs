@@ -156,7 +156,7 @@ pub async fn pd_proxy_handler(State(state): State<Arc<AppState>>, req: Request) 
                 Ok(v) => v,
                 Err(e) => return PdProxyError::JsonParse(e.to_string()).into_response(),
             };
-            let ctx = extract_context(&body_bytes);
+            let ctx = extract_context(&body_bytes, &parts.headers);
 
             let result = match mode {
                 crate::config::PdMode::Vllm => {
