@@ -56,7 +56,7 @@ pub async fn proxy_handler(
     }
 
     // Extract session / prefix context for cache-aware policies.
-    let ctx = extract_context(&body_bytes);
+    let ctx = extract_context(&body_bytes, &parts.headers);
 
     // Remove the Host header so reqwest sets it from the target URL.
     parts.headers.remove(http::header::HOST);
