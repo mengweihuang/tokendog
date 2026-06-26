@@ -3,10 +3,9 @@ use std::sync::Arc;
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use http_body_util::BodyExt;
-use router::build_router;
 use router::config::auth::AuthConfig;
 use router::policies::round_robin::RoundRobin;
-use router::state::AppState;
+use router::server::{self, AppState};
 use router::worker::Worker;
 use tower::util::ServiceExt;
 
@@ -17,7 +16,7 @@ fn test_app(auth_config: AuthConfig) -> axum::Router {
         30,
         Box::new(RoundRobin::new()),
     ));
-    build_router(state, auth_config)
+    server::build_router(state, auth_config)
 }
 
 #[tokio::test]

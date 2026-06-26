@@ -1,5 +1,5 @@
 use axum::http::{HeaderMap, HeaderValue};
-use router::proxy::header::{filter_hop_by_hop, is_hop_by_hop};
+use router::middleware::header::{filter_hop_by_hop, is_hop_by_hop};
 
 #[test]
 fn test_is_hop_by_hop_known_headers() {

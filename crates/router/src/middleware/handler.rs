@@ -14,7 +14,7 @@ use url::Url;
 use super::context::extract_context;
 use super::error::ProxyError;
 use super::header::filter_hop_by_hop;
-use crate::state::AppState;
+use crate::server::AppState;
 
 /// Maximum request body size to collect in memory: 16 MB.
 const MAX_BODY_SIZE: usize = 16 * 1024 * 1024;

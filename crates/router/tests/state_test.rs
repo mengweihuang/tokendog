@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use router::policies::round_robin::RoundRobin;
 use router::policies::LoadBalancer;
-use router::state::AppState;
+use router::server::AppState;
 use router::worker::Worker;
 
 fn make_workers(urls: &[&str]) -> Vec<Arc<Worker>> {

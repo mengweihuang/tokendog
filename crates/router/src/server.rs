@@ -1,14 +1,31 @@
-//! Application state with load-balancing policy and shared HTTP client.
+//! Server setup and application state.
+//!
+//! Contains AppState (worker pool, HTTP client, load balancer), the axum
+//! router builder, and the graceful-shutdown signal handler.
 
-pub mod client;
-
+use std::future;
 use std::sync::Arc;
+use std::time::Duration;
+
+use axum::{middleware, routing::get, Router};
+use tower_http::trace::TraceLayer;
 
 use crate::config;
+use crate::config::auth::AuthConfig;
 use crate::policies::{LoadBalancer, RequestContext};
 use crate::worker::{self, Worker};
 
-use self::client::build_client;
+// ── HTTP client ────────────────────────────────────────────────────────────
+
+/// Build a reusable HTTP client with connection pooling and timeout.
+fn build_client(timeout_secs: u64) -> reqwest::Client {
+    reqwest::Client::builder()
+        .timeout(Duration::from_secs(timeout_secs))
+        .build()
+        .expect("Failed to build reqwest Client")
+}
+
+// ── Application state ──────────────────────────────────────────────────────
 
 /// Shared application state holding worker list, HTTP client, and load balancer.
 pub struct AppState {
@@ -227,4 +244,55 @@ impl AppState {
     pub fn record_request(&self, ctx: &RequestContext, worker_idx: usize) {
         self.balancer.record(ctx, worker_idx);
     }
+}
+
+// ── Router builder ─────────────────────────────────────────────────────────
+
+/// Build the axum router with all routes and middleware.
+///
+/// - `/health` is publicly accessible (auth middleware bypasses it).
+/// - All other routes (including the fallback proxy handler) are protected
+///   by Bearer token authentication when `data_plane_api_keys` are configured.
+pub fn build_router(state: Arc<AppState>, auth_config: AuthConfig) -> Router {
+    Router::new()
+        .route("/health", get(crate::worker::health::health_handler))
+        .fallback(crate::routes::pd_proxy_handler)
+        .layer(middleware::from_fn_with_state(
+            auth_config,
+            crate::config::auth::auth_middleware,
+        ))
+        .layer(TraceLayer::new_for_http())
+        .with_state(state)
+}
+
+// ── Shutdown signal ────────────────────────────────────────────────────────
+
+/// Wait for a shutdown signal (Ctrl+C on all platforms, plus SIGTERM on Unix).
+pub async fn shutdown_signal() {
+    tokio::select! {
+        _ = tokio::signal::ctrl_c() => {
+            tracing::info!("Ctrl+C received, shutting down");
+        }
+        _ = term_signal() => {
+            tracing::info!("SIGTERM received, shutting down");
+        }
+    }
+}
+
+#[cfg(unix)]
+async fn term_signal() {
+    match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+        Ok(mut sig) => {
+            sig.recv().await;
+        }
+        Err(e) => {
+            tracing::warn!("Cannot install SIGTERM handler ({}), using Ctrl+C only", e);
+            future::pending::<()>().await;
+        }
+    }
+}
+
+#[cfg(not(unix))]
+async fn term_signal() {
+    future::pending::<()>().await;
 }

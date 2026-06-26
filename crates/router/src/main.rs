@@ -8,15 +8,13 @@ use tokio::net::TcpListener;
 use tracing_subscriber::EnvFilter;
 
 use router::{
-    build_router,
     config::{self, auth::AuthConfig, Config},
     policies::{
         least_loaded::LeastLoaded, load_cache_aware::LoadCacheAware, power_of_two::PowerOfTwo,
         prefix_affinity::PrefixAffinity, random::Random, round_robin::RoundRobin,
         session_affinity::SessionAffinity, LoadBalancer,
     },
-    shutdown_signal,
-    state::AppState,
+    server::{self, AppState},
     worker::{self, Worker},
 };
 
@@ -126,7 +124,7 @@ async fn main() {
         });
     }
 
-    let app = build_router(state, auth_config);
+    let app = server::build_router(state, auth_config);
     let listener = TcpListener::bind(&listen_addr)
         .await
         .expect("Failed to bind to listen address");
@@ -134,7 +132,7 @@ async fn main() {
     tracing::info!("Listening on {}", listen_addr);
 
     axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal())
+        .with_graceful_shutdown(server::shutdown_signal())
         .await
         .expect("Server error");
 }
