@@ -3,7 +3,7 @@ use axum::{extract::State, http::StatusCode, response::Json};
 use serde::Serialize;
 use std::sync::Arc;
 
-use crate::state::AppState;
+use crate::server::AppState;
 
 /// Per-worker health status in the `/health` response.
 #[derive(Serialize)]

@@ -1,7 +1,8 @@
 //! Prefill-Decode (PD) separation route handlers.
 //!
-//! Implements two-stage request processing for vLLM disaggregated inference:
-//! prefill on a dedicated prefill worker, then decode on a dedicated decode worker.
+//! Implements two-stage request processing for vLLM and SGLang disaggregated
+//! inference: prefill on a dedicated prefill worker, then decode on a dedicated
+//! decode worker.
 
 pub mod logprobs_merge;
 pub mod pd_handler;

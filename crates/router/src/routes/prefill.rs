@@ -1,4 +1,4 @@
-//! Prefill request construction helpers for vLLM PD separation.
+//! Prefill request construction helpers for vLLM and SGLang PD separation.
 //!
 //! Provides functions to modify a request for the prefill stage (forcing
 //! `max_tokens=1`) and to build KV transfer parameters for the Nixl connector.

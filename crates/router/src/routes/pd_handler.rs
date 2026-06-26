@@ -1,4 +1,4 @@
-//! Prefill-Decode proxy handler for vLLM disaggregated inference.
+//! Prefill-Decode proxy handler for vLLM and SGLang disaggregated inference.
 //!
 //! When PD mode is active, inference API requests go through a two-stage pipeline:
 //! 1. **Prefill** — send a `max_tokens=1` variant to a prefill worker to populate the KV cache.
@@ -20,8 +20,8 @@ use tracing::info;
 use url::Url;
 
 use super::{logprobs_merge, prefill};
-use crate::proxy::{context::extract_context, header::filter_hop_by_hop};
-use crate::state::AppState;
+use crate::middleware::{context::extract_context, header::filter_hop_by_hop};
+use crate::server::AppState;
 
 /// Maximum request body size: 16 MB.
 const MAX_BODY_SIZE: usize = 16 * 1024 * 1024;
@@ -30,7 +30,7 @@ const MAX_BODY_SIZE: usize = 16 * 1024 * 1024;
 
 /// Errors that can occur during PD two-stage request processing.
 #[derive(Debug, Error)]
-pub enum PdProxyError {
+enum PdProxyError {
     #[error("Failed to read request body: {0}")]
     BodyCollect(String),
     #[error("Failed to parse request JSON: {0}")]
@@ -174,7 +174,7 @@ pub async fn pd_proxy_handler(State(state): State<Arc<AppState>>, req: Request) 
         }
         _ => {
             let forward_req = Request::from_parts(parts, body);
-            match crate::proxy::proxy_handler(State(state), forward_req).await {
+            match crate::middleware::proxy_handler(State(state), forward_req).await {
                 Ok(response) => response,
                 Err(e) => e.into_response(),
             }
@@ -218,7 +218,7 @@ async fn process_sglang_pd_request(
     if let Some(obj) = prefill_request.as_object_mut() {
         obj.insert(
             "bootstrap_host".to_string(),
-            serde_json::Value::String(bootstrap_host.clone()),
+            Value::String(bootstrap_host.clone()),
         );
         obj.insert(
             "bootstrap_port".to_string(),
@@ -236,7 +236,7 @@ async fn process_sglang_pd_request(
     if let Some(obj) = decode_request.as_object_mut() {
         obj.insert(
             "bootstrap_host".to_string(),
-            serde_json::Value::String(bootstrap_host),
+            Value::String(bootstrap_host),
         );
         obj.insert(
             "bootstrap_port".to_string(),

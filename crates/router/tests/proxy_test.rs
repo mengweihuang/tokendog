@@ -2,10 +2,9 @@ use std::sync::Arc;
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
-use router::build_router;
 use router::config::auth::AuthConfig;
 use router::policies::round_robin::RoundRobin;
-use router::state::AppState;
+use router::server::{self, AppState};
 use router::worker::Worker;
 use tower::util::ServiceExt;
 
@@ -22,7 +21,7 @@ async fn test_proxy_handler_backend_unreachable() {
         3,
         Box::new(RoundRobin::new()),
     ));
-    let app = build_router(state, AuthConfig::new(None));
+    let app = server::build_router(state, AuthConfig::new(None));
 
     let response = app
         .oneshot(
@@ -52,7 +51,7 @@ async fn test_proxy_handler_invalid_worker_url() {
         3,
         Box::new(RoundRobin::new()),
     ));
-    let app = build_router(state, AuthConfig::new(None));
+    let app = server::build_router(state, AuthConfig::new(None));
 
     let response = app
         .oneshot(Request::builder().uri("/test").body(Body::empty()).unwrap())

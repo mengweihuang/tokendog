@@ -1,7 +1,7 @@
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use http_body_util::BodyExt;
-use router::proxy::error::ProxyError;
+use router::middleware::error::ProxyError;
 
 #[test]
 fn test_proxy_error_url_parse_returns_502() {

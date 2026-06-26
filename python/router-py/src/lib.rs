@@ -8,7 +8,6 @@ use pyo3::prelude::*;
 use tokio::net::TcpListener;
 use tracing_subscriber::EnvFilter;
 
-use router::build_router;
 use router::config::auth::AuthConfig;
 use router::config::PdMode;
 use router::policies::{
@@ -16,8 +15,7 @@ use router::policies::{
     prefix_affinity::PrefixAffinity, random::Random, round_robin::RoundRobin,
     session_affinity::SessionAffinity, LoadBalancer,
 };
-use router::shutdown_signal;
-use router::state::AppState;
+use router::server::{self, AppState};
 use router::worker::{self, Worker};
 
 /// Validates a policy string and returns it normalized.
@@ -286,7 +284,7 @@ impl Router {
             }
 
             let auth_config = AuthConfig::new(Some(data_plane_api_keys));
-            let app = build_router(state, auth_config);
+            let app = server::build_router(state, auth_config);
 
             rt.block_on(async move {
                 tracing::info!("Listening on {}", addr);
@@ -296,7 +294,7 @@ impl Router {
                 })?;
 
                 axum::serve(listener, app)
-                    .with_graceful_shutdown(shutdown_signal())
+                    .with_graceful_shutdown(server::shutdown_signal())
                     .await
                     .map_err(|e| format!("Server error: {}", e))
             })
