@@ -1,6 +1,8 @@
 pub mod auth;
 pub mod logging;
 
+use std::collections::HashMap;
+
 use clap::{ArgAction, Parser};
 
 /// Load-balancing policy selection.
@@ -122,4 +124,53 @@ pub struct Config {
     /// Optional file path for JSON log output. If not set, logs only go to stderr.
     #[arg(long, env = "LOG_FILE")]
     pub log_file: Option<String>,
+
+    // ── Kubernetes service discovery ─────────────────────────────────────
+    /// K8s namespace to watch (omit for all namespaces).
+    #[arg(long, env = "K8S_NAMESPACE")]
+    pub k8s_namespace: Option<String>,
+
+    /// K8s label selector for worker pods (key=value pairs, comma-separated).
+    #[arg(long, env = "K8S_SELECTOR", value_delimiter = ',')]
+    pub k8s_selector: Vec<String>,
+
+    /// K8s label selector for prefill pods in PD mode (key=value pairs).
+    #[arg(long, env = "K8S_PREFILL_SELECTOR", value_delimiter = ',')]
+    pub k8s_prefill_selector: Vec<String>,
+
+    /// K8s label selector for decode pods in PD mode (key=value pairs).
+    #[arg(long, env = "K8S_DECODE_SELECTOR", value_delimiter = ',')]
+    pub k8s_decode_selector: Vec<String>,
+
+    /// Port workers listen on inside pods.
+    #[arg(long, env = "K8S_PORT", default_value = "8000")]
+    pub k8s_port: u16,
+
+    /// K8s reconciliation check interval in seconds.
+    #[arg(long, env = "K8S_CHECK_INTERVAL", default_value = "60")]
+    pub k8s_check_interval_secs: u64,
+}
+
+impl Config {
+    /// Returns true if K8s service discovery is enabled (any selector is configured).
+    pub fn has_k8s_enabled(&self) -> bool {
+        !self.k8s_selector.is_empty()
+            || !self.k8s_prefill_selector.is_empty()
+            || !self.k8s_decode_selector.is_empty()
+    }
+}
+
+/// Parse a list of "key=value" strings into a `HashMap<String, String>`.
+///
+/// Invalid entries (missing `=`) are logged and skipped.
+pub fn parse_selector(items: &[String]) -> HashMap<String, String> {
+    let mut map = HashMap::new();
+    for item in items {
+        if let Some((k, v)) = item.split_once('=') {
+            map.insert(k.trim().to_string(), v.trim().to_string());
+        } else {
+            tracing::warn!("Invalid selector entry '{}' (expected key=value), skipping", item);
+        }
+    }
+    map
 }
