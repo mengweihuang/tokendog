@@ -8,14 +8,17 @@ use pyo3::prelude::*;
 use tokio::net::TcpListener;
 use tracing_subscriber::EnvFilter;
 
+use std::collections::HashMap;
+
 use router::config::auth::AuthConfig;
-use router::config::PdMode;
+use router::config::{self, PdMode};
 use router::policies::{
     least_loaded::LeastLoaded, load_cache_aware::LoadCacheAware, power_of_two::PowerOfTwo,
     prefix_affinity::PrefixAffinity, random::Random, round_robin::RoundRobin,
     session_affinity::SessionAffinity, LoadBalancer,
 };
 use router::server::{self, AppState};
+use router::service_discovery::{self, ServiceDiscoveryConfig, SharedWorkerPool};
 use router::worker::{self, Worker};
 
 /// Validates a policy string and returns it normalized.
@@ -96,12 +99,25 @@ struct Router {
     health_check_interval_secs: u64,
     #[pyo3(get)]
     log_file: Option<String>,
+    // ── K8s service discovery ───────────────────────────────────────────
+    #[pyo3(get)]
+    k8s_selector: Vec<String>,
+    #[pyo3(get)]
+    k8s_namespace: Option<String>,
+    #[pyo3(get)]
+    k8s_port: u16,
+    #[pyo3(get)]
+    k8s_check_interval_secs: u64,
+    #[pyo3(get)]
+    k8s_prefill_selector: Vec<String>,
+    #[pyo3(get)]
+    k8s_decode_selector: Vec<String>,
 }
 
 #[pymethods]
 impl Router {
     #[new]
-    #[pyo3(signature = (worker_urls, host="0.0.0.0", port=30000, request_timeout_secs=300, log_level="info", policy="least-loaded", pd_mode=None, prefill_urls=None, decode_urls=None, data_plane_api_keys=None, health_check=true, health_check_interval_secs=60, log_file=None))]
+    #[pyo3(signature = (worker_urls, host="0.0.0.0", port=30000, request_timeout_secs=300, log_level="info", policy="least-loaded", pd_mode=None, prefill_urls=None, decode_urls=None, data_plane_api_keys=None, health_check=true, health_check_interval_secs=60, log_file=None, k8s_selector=None, k8s_namespace=None, k8s_port=8000, k8s_check_interval_secs=60, k8s_prefill_selector=None, k8s_decode_selector=None))]
     #[allow(clippy::too_many_arguments)]
     fn new(
         worker_urls: Vec<String>,
@@ -117,6 +133,12 @@ impl Router {
         health_check: bool,
         health_check_interval_secs: u64,
         log_file: Option<String>,
+        k8s_selector: Option<Vec<String>>,
+        k8s_namespace: Option<String>,
+        k8s_port: u16,
+        k8s_check_interval_secs: u64,
+        k8s_prefill_selector: Option<Vec<String>>,
+        k8s_decode_selector: Option<Vec<String>>,
     ) -> PyResult<Self> {
         let policy = validate_policy(policy)?;
         let pd_mode = match pd_mode {
@@ -145,6 +167,12 @@ impl Router {
             health_check,
             health_check_interval_secs,
             log_file,
+            k8s_selector: k8s_selector.unwrap_or_default(),
+            k8s_namespace,
+            k8s_port,
+            k8s_check_interval_secs,
+            k8s_prefill_selector: k8s_prefill_selector.unwrap_or_default(),
+            k8s_decode_selector: k8s_decode_selector.unwrap_or_default(),
         })
     }
 
@@ -183,6 +211,16 @@ impl Router {
         let data_plane_api_keys = self.data_plane_api_keys.clone();
         let health_check = self.health_check;
         let health_check_interval_secs = self.health_check_interval_secs;
+        // K8s fields
+        let k8s_selector = self.k8s_selector.clone();
+        let k8s_namespace = self.k8s_namespace.clone();
+        let k8s_port = self.k8s_port;
+        let k8s_check_interval_secs = self.k8s_check_interval_secs;
+        let k8s_prefill_selector = self.k8s_prefill_selector.clone();
+        let k8s_decode_selector = self.k8s_decode_selector.clone();
+        let is_k8s = !k8s_selector.is_empty()
+            || !k8s_prefill_selector.is_empty()
+            || !k8s_decode_selector.is_empty();
 
         // Release the GIL before blocking on the async server loop.
         let log_file_owned = self.log_file.clone();
@@ -217,53 +255,162 @@ impl Router {
                 "Starting router (Python bindings)",
             );
 
-            let state: Arc<AppState> = if let Some(ref pd_mode_val) = pd_mode {
-                assert!(
-                    !prefill_urls.is_empty(),
-                    "PD mode requires at least one prefill_urls"
-                );
-                assert!(
-                    !decode_urls.is_empty(),
-                    "PD mode requires at least one decode_urls"
-                );
-
-                let pd_mode_enum = match pd_mode_val.to_lowercase().as_str() {
-                    "vllm" => PdMode::Vllm,
-                    "sglang" => PdMode::Sglang,
-                    _ => unreachable!(),
-                };
-
-                let n_prefill = prefill_urls.len();
-                let n_decode = decode_urls.len();
-
-                Arc::new(AppState::new_pd(
-                    pd_mode_enum,
-                    Worker::from_urls(&prefill_urls),
-                    Worker::from_urls(&decode_urls),
-                    timeout_secs,
-                    make_policy(&policy, n_prefill),
-                    make_policy(&policy, n_decode),
-                ))
-            } else {
-                let n = worker_urls.len();
-                Arc::new(AppState::new(
-                    Worker::from_urls(&worker_urls),
-                    timeout_secs,
-                    make_policy(&policy, n),
-                ))
-            };
-
             let rt = tokio::runtime::Runtime::new().map_err(|e| {
                 format!("Failed to create Tokio runtime: {}", e)
             })?;
+
+            let state: Arc<AppState> = if is_k8s {
+                // ── K8s service discovery mode ────────────────────────────
+                let policy_type = match policy.as_str() {
+                    "least-loaded" => config::Policy::LeastLoaded,
+                    "power-of-two" => config::Policy::PowerOfTwo,
+                    "random" => config::Policy::Random,
+                    "round-robin" => config::Policy::RoundRobin,
+                    "session-affinity" => config::Policy::SessionAffinity,
+                    "prefix-affinity" => config::Policy::PrefixAffinity,
+                    "load-cache-aware" => config::Policy::LoadCacheAware,
+                    _ => config::Policy::LeastLoaded,
+                };
+
+                let parse_sel = |items: &[String]| -> HashMap<String, String> {
+                    config::parse_selector(items)
+                };
+
+                if let Some(ref pd_mode_val) = pd_mode {
+                    let pd_mode_enum = match pd_mode_val.to_lowercase().as_str() {
+                        "vllm" => PdMode::Vllm,
+                        "sglang" => PdMode::Sglang,
+                        _ => unreachable!(),
+                    };
+
+                    let prefill_pool: SharedWorkerPool =
+                        Arc::new(std::sync::RwLock::new(Vec::new()));
+                    let decode_pool: SharedWorkerPool =
+                        Arc::new(std::sync::RwLock::new(Vec::new()));
+
+                    let state = Arc::new(AppState::new_k8s_pd(
+                        pd_mode_enum,
+                        timeout_secs,
+                        policy_type,
+                        Arc::clone(&prefill_pool),
+                        Arc::clone(&decode_pool),
+                    ));
+
+                    let sd_config = ServiceDiscoveryConfig {
+                        enabled: true,
+                        selector: parse_sel(&k8s_selector),
+                        check_interval: Duration::from_secs(k8s_check_interval_secs),
+                        port: k8s_port,
+                        namespace: k8s_namespace.clone(),
+                        pd_mode: true,
+                        prefill_selector: parse_sel(&k8s_prefill_selector),
+                        decode_selector: parse_sel(&k8s_decode_selector),
+                    };
+
+                    rt.spawn(async move {
+                        match service_discovery::start_service_discovery(
+                            sd_config,
+                            Arc::new(std::sync::RwLock::new(Vec::new())),
+                            Some(prefill_pool),
+                            Some(decode_pool),
+                        )
+                        .await
+                        {
+                            Ok(handle) => {
+                                let _ = handle.await;
+                            }
+                            Err(e) => {
+                                tracing::error!("Failed to start service discovery: {e}");
+                            }
+                        }
+                    });
+
+                    state
+                } else {
+                    let workers_pool: SharedWorkerPool =
+                        Arc::new(std::sync::RwLock::new(Vec::new()));
+
+                    let state = Arc::new(AppState::new_k8s(
+                        timeout_secs,
+                        policy_type,
+                        Arc::clone(&workers_pool),
+                    ));
+
+                    let sd_config = ServiceDiscoveryConfig {
+                        enabled: true,
+                        selector: parse_sel(&k8s_selector),
+                        check_interval: Duration::from_secs(k8s_check_interval_secs),
+                        port: k8s_port,
+                        namespace: k8s_namespace.clone(),
+                        pd_mode: false,
+                        prefill_selector: Default::default(),
+                        decode_selector: Default::default(),
+                    };
+
+                    rt.spawn(async move {
+                        match service_discovery::start_service_discovery(
+                            sd_config,
+                            workers_pool,
+                            None,
+                            None,
+                        )
+                        .await
+                        {
+                            Ok(handle) => {
+                                let _ = handle.await;
+                            }
+                            Err(e) => {
+                                tracing::error!("Failed to start service discovery: {e}");
+                            }
+                        }
+                    });
+
+                    state
+                }
+            } else {
+                // ── Static worker mode ────────────────────────────────────
+                if let Some(ref pd_mode_val) = pd_mode {
+                    assert!(
+                        !prefill_urls.is_empty(),
+                        "PD mode requires at least one prefill_urls"
+                    );
+                    assert!(
+                        !decode_urls.is_empty(),
+                        "PD mode requires at least one decode_urls"
+                    );
+
+                    let pd_mode_enum = match pd_mode_val.to_lowercase().as_str() {
+                        "vllm" => PdMode::Vllm,
+                        "sglang" => PdMode::Sglang,
+                        _ => unreachable!(),
+                    };
+
+                    let n_prefill = prefill_urls.len();
+                    let n_decode = decode_urls.len();
+
+                    Arc::new(AppState::new_pd(
+                        pd_mode_enum,
+                        Worker::from_urls(&prefill_urls),
+                        Worker::from_urls(&decode_urls),
+                        timeout_secs,
+                        make_policy(&policy, n_prefill),
+                        make_policy(&policy, n_decode),
+                    ))
+                } else {
+                    let n = worker_urls.len();
+                    Arc::new(AppState::new(
+                        Worker::from_urls(&worker_urls),
+                        timeout_secs,
+                        make_policy(&policy, n),
+                    ))
+                }
+            };
 
             // Spawn background health-check task when enabled.
             if health_check {
                 let interval = Duration::from_secs(health_check_interval_secs);
                 let health_client = state.client.clone();
-                let health_workers = state.workers.clone();
-                let health_prefill_workers = state.prefill_workers().to_vec();
-                let health_decode_workers = state.decode_workers().to_vec();
+                let state_ref = Arc::clone(&state);
 
                 rt.spawn(async move {
                     tracing::info!(
@@ -272,12 +419,33 @@ impl Router {
                     );
                     loop {
                         tokio::time::sleep(interval).await;
-                        worker::run_health_checks(&health_client, &health_workers).await;
-                        if !health_prefill_workers.is_empty() {
-                            worker::run_health_checks(&health_client, &health_prefill_workers).await;
-                        }
-                        if !health_decode_workers.is_empty() {
-                            worker::run_health_checks(&health_client, &health_decode_workers).await;
+
+                        if state_ref.is_k8s_mode() {
+                            let regular = state_ref.k8s_workers_snapshot();
+                            let prefill = state_ref.k8s_prefill_snapshot();
+                            let decode = state_ref.k8s_decode_snapshot();
+
+                            if !regular.is_empty() {
+                                worker::run_health_checks(&health_client, &regular).await;
+                            }
+                            if !prefill.is_empty() {
+                                worker::run_health_checks(&health_client, &prefill).await;
+                            }
+                            if !decode.is_empty() {
+                                worker::run_health_checks(&health_client, &decode).await;
+                            }
+                        } else {
+                            let health_workers = state_ref.workers.clone();
+                            let health_prefill_workers = state_ref.prefill_workers().to_vec();
+                            let health_decode_workers = state_ref.decode_workers().to_vec();
+
+                            worker::run_health_checks(&health_client, &health_workers).await;
+                            if !health_prefill_workers.is_empty() {
+                                worker::run_health_checks(&health_client, &health_prefill_workers).await;
+                            }
+                            if !health_decode_workers.is_empty() {
+                                worker::run_health_checks(&health_client, &health_decode_workers).await;
+                            }
                         }
                     }
                 });

@@ -81,12 +81,54 @@ def _add_args(parser: argparse.ArgumentParser) -> None:
         action="store_true",
         help="Generate an API key (sk- prefix, 32 hex chars) and exit.",
     )
+    # ── K8s service discovery ──────────────────────────────────────────
+    parser.add_argument(
+        "--k8s-selector",
+        nargs="+",
+        default=[],
+        help="K8s label selector for worker pods (key=value pairs). Enables K8s service discovery.",
+    )
+    parser.add_argument(
+        "--k8s-namespace",
+        default=None,
+        help="K8s namespace to watch (omit for all namespaces).",
+    )
+    parser.add_argument(
+        "--k8s-port",
+        type=int,
+        default=8000,
+        help="Port workers listen on inside pods (default: 8000).",
+    )
+    parser.add_argument(
+        "--k8s-check-interval",
+        type=int,
+        default=60,
+        help="K8s reconciliation check interval in seconds (default: 60).",
+    )
+    parser.add_argument(
+        "--k8s-prefill-selector",
+        nargs="+",
+        default=[],
+        help="K8s label selector for prefill pods in PD mode (key=value pairs).",
+    )
+    parser.add_argument(
+        "--k8s-decode-selector",
+        nargs="+",
+        default=[],
+        help="K8s label selector for decode pods in PD mode (key=value pairs).",
+    )
 
 
 def _cmd_serve(args: argparse.Namespace) -> None:
     """Start the router gateway."""
-    if not args.worker_urls:
-        print("error: the following arguments are required: --worker-urls", file=sys.stderr)
+    # Detect K8s mode: any k8s selector enables it.
+    k8s_enabled = bool(args.k8s_selector or args.k8s_prefill_selector or args.k8s_decode_selector)
+
+    if not k8s_enabled and not args.worker_urls:
+        print(
+            "error: either --worker-urls or --k8s-selector is required",
+            file=sys.stderr,
+        )
         sys.exit(2)
 
     worker_urls: list[str] = []
@@ -105,6 +147,18 @@ def _cmd_serve(args: argparse.Namespace) -> None:
     for u in args.data_plane_api_keys:
         data_plane_api_keys.extend(u.split(","))
 
+    k8s_selector: list[str] = []
+    for u in args.k8s_selector:
+        k8s_selector.extend(u.split(","))
+
+    k8s_prefill_selector: list[str] = []
+    for u in args.k8s_prefill_selector:
+        k8s_prefill_selector.extend(u.split(","))
+
+    k8s_decode_selector: list[str] = []
+    for u in args.k8s_decode_selector:
+        k8s_decode_selector.extend(u.split(","))
+
     gateway = Router(
         worker_urls=worker_urls,
         host=args.host,
@@ -116,6 +170,12 @@ def _cmd_serve(args: argparse.Namespace) -> None:
         prefill_urls=prefill_urls if prefill_urls else None,
         decode_urls=decode_urls if decode_urls else None,
         data_plane_api_keys=data_plane_api_keys if data_plane_api_keys else None,
+        k8s_selector=k8s_selector if k8s_selector else None,
+        k8s_namespace=args.k8s_namespace,
+        k8s_port=args.k8s_port,
+        k8s_check_interval_secs=args.k8s_check_interval,
+        k8s_prefill_selector=k8s_prefill_selector if k8s_prefill_selector else None,
+        k8s_decode_selector=k8s_decode_selector if k8s_decode_selector else None,
     )
     gateway.serve()
 

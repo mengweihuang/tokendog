@@ -208,7 +208,7 @@ async fn process_sglang_pd_request(
         .ok_or_else(|| PdProxyError::NoWorkers("decode".to_string()))?;
 
     let (bootstrap_host, bootstrap_port, bootstrap_room) =
-        prefill::build_sglang_bootstrap_params(prefill_url, prefill::DEFAULT_BOOTSTRAP_PORT);
+        prefill::build_sglang_bootstrap_params(&prefill_url, prefill::DEFAULT_BOOTSTRAP_PORT);
 
     let si = detect_streaming_info(&request_json);
 
@@ -248,8 +248,8 @@ async fn process_sglang_pd_request(
         );
     }
 
-    let prefill_target = build_target_url(prefill_url, path)?;
-    let decode_target = build_target_url(decode_url, path)?;
+    let prefill_target = build_target_url(&prefill_url, path)?;
+    let decode_target = build_target_url(&decode_url, path)?;
 
     info!(
         request_id = %request_id,
@@ -352,7 +352,7 @@ async fn process_vllm_pd_request(
     // allocation can overlap with the round-trip.
     let decode_request = request_json.clone();
 
-    let prefill_target = build_target_url(prefill_url, path)?;
+    let prefill_target = build_target_url(&prefill_url, path)?;
 
     info!(
         request_id = %request_id,
@@ -404,7 +404,7 @@ async fn process_vllm_pd_request(
 
     let si = detect_streaming_info(&request_json);
 
-    let decode_target = build_target_url(decode_url, path)?;
+    let decode_target = build_target_url(&decode_url, path)?;
 
     info!(
         request_id = %request_id,
